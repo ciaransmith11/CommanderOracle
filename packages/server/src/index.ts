@@ -6,7 +6,7 @@ import { categorise, parseDecklist } from '@commander-oracle/core';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import { fetchCollection, namedCard, resolveEntries } from './scryfall.js';
-import { analyseDeck, buildAdvice, chatDeck, proposeStrategies } from './analyse.js';
+import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
 import { messages, sessions } from './db.js';
 
@@ -108,14 +108,20 @@ app.post('/api/build/strategies', async (c) => {
 
 app.post('/api/build', async (c) => {
   if (!hasApiKey()) return c.json({ error: 'ANTHROPIC_API_KEY not set' }, 503);
-  const body = await c.req.json<{ commander?: string; strategy?: string }>();
-
-  let commanderCard: Card | undefined;
-  if (body.commander?.trim()) {
-    const { cards } = await fetchCollection([body.commander]);
-    commanderCard = cards[0];
+  const body = await c.req.json<{
+    commander?: string;
+    strategy?: string;
+    messages?: { role: 'user' | 'assistant'; content: string }[];
+  }>();
+  if (!body.commander?.trim() || !body.strategy?.trim()) {
+    return c.json({ error: 'missing commander or strategy' }, 400);
   }
-  return sseFromGenerator(c, () => buildAdvice({ commander: commanderCard, strategy: body.strategy }));
+
+  const { cards } = await fetchCollection([body.commander]);
+  const commander = cards[0];
+  if (!commander) return c.json({ error: `commander not found: ${body.commander}` }, 404);
+
+  return sseFromGenerator(c, () => buildChat(commander, body.strategy!, body.messages ?? []));
 });
 
 // --- Card recommendations (strategy/keyword → real Scryfall candidates) ----

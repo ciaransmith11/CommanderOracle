@@ -375,13 +375,16 @@ function ChatComposer({ busy, onSubmit }: { busy: boolean; onSubmit: (text: stri
   );
 }
 
+type BuildMsg = { role: 'user' | 'assistant'; content: string };
+
 function BuildTab() {
   const [commander, setCommander] = useState('');
   const [commanderCard, setCommanderCard] = useState<Card | null>(null);
   const [strategies, setStrategies] = useState<BuildStrategy[] | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
   const [custom, setCustom] = useState('');
-  const [text, setText] = useState('');
+  const [convo, setConvo] = useState<BuildMsg[]>([]);
+  const [streaming, setStreaming] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const acc = useRef('');
@@ -389,7 +392,7 @@ function BuildTab() {
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
-  }, [text, strategies, chosen]);
+  }, [convo, streaming, strategies]);
 
   async function explore() {
     if (!commander.trim() || busy) return;
@@ -397,7 +400,8 @@ function BuildTab() {
     setError(null);
     setStrategies(null);
     setChosen(null);
-    setText('');
+    setConvo([]);
+    setStreaming('');
     try {
       const r = await api.buildStrategies(commander.trim());
       setCommanderCard(r.commander);
@@ -409,34 +413,55 @@ function BuildTab() {
     }
   }
 
-  function choose(strategy: string) {
-    if (!strategy.trim() || busy) return;
-    setChosen(strategy);
-    setText('');
-    acc.current = '';
+  // Stream one build turn. `nextConvo` includes the new user message; the first
+  // display message ("Build around: …") is local only — the backend already has
+  // the strategy as context, so we send everything after it.
+  function runTurn(strategy: string, nextConvo: BuildMsg[]) {
     setBusy(true);
     setError(null);
+    setStreaming('');
+    acc.current = '';
     streamBuild(
-      { commander: commander.trim(), strategy },
+      { commander: commander.trim(), strategy, messages: nextConvo.slice(1) },
       {
         onDelta: (t) => {
           acc.current += t;
-          setText(acc.current);
+          setStreaming(acc.current);
         },
-        onDone: () => setBusy(false),
+        onDone: () => {
+          setConvo([...nextConvo, { role: 'assistant', content: acc.current }]);
+          setStreaming('');
+          setBusy(false);
+        },
         onError: (m) => {
           setError(m);
+          setStreaming('');
           setBusy(false);
         },
       },
     );
   }
 
+  function choose(strategy: string) {
+    if (!strategy.trim() || busy) return;
+    setChosen(strategy);
+    const start: BuildMsg[] = [{ role: 'user', content: `Build around: ${strategy}` }];
+    setConvo(start);
+    runTurn(strategy, start);
+  }
+
+  function followUp(text: string) {
+    if (!chosen) return;
+    const next: BuildMsg[] = [...convo, { role: 'user', content: text }];
+    setConvo(next);
+    runTurn(chosen, next);
+  }
+
   return (
     <>
       <div className="content" ref={contentRef}>
         <div className="thread">
-          {!strategies && !busy && !text && (
+          {!strategies && !busy && (
             <div className="placeholder">
               <h2>Build a deck</h2>
               <p>Name a commander to see distinct ways to build around it, then pick a direction.</p>
@@ -477,43 +502,57 @@ function BuildTab() {
             </div>
           )}
 
-          {chosen && (
-            <>
-              <div className="bubble bubble--user">Building around: {chosen}</div>
-              {busy && !text && <WorkingBubble label="Searching Scryfall and assembling your build…" />}
-              {text && (
-                <div className="bubble bubble--assistant">
-                  <Markdown text={text} streaming={busy} />
+          {chosen &&
+            convo.map((m, i) =>
+              m.role === 'assistant' ? (
+                <div className="bubble bubble--assistant" key={i}>
+                  <Markdown text={m.content} />
                 </div>
-              )}
-              {!busy && strategies && (
-                <button className="linkish" onClick={() => setChosen(null)}>
-                  ← choose a different direction
-                </button>
-              )}
-            </>
+              ) : (
+                <div className="bubble bubble--user" key={i}>
+                  {m.content}
+                </div>
+              ),
+            )}
+          {chosen && busy && !streaming && (
+            <WorkingBubble label="Searching Scryfall and assembling your build…" />
+          )}
+          {streaming && (
+            <div className="bubble bubble--assistant">
+              <Markdown text={streaming} streaming />
+            </div>
+          )}
+          {chosen && !busy && strategies && (
+            <button className="linkish" onClick={() => setChosen(null)}>
+              ← choose a different direction
+            </button>
           )}
 
           {error && <div className="error-banner">⚠ {error}</div>}
         </div>
       </div>
-      <div className="composer">
-        <div className="composer__inner">
-          <input
-            type="text"
-            placeholder="Commander (e.g. Krenko, Mob Boss)"
-            value={commander}
-            onChange={(e) => setCommander(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && explore()}
-          />
-          <button className="btn-send" disabled={busy || !commander.trim()} onClick={explore}>
-            {busy && !strategies ? 'Exploring…' : 'Explore strategies'}
-          </button>
+
+      {chosen ? (
+        <ChatComposer busy={busy} onSubmit={followUp} />
+      ) : (
+        <div className="composer">
+          <div className="composer__inner">
+            <input
+              type="text"
+              placeholder="Commander (e.g. Krenko, Mob Boss)"
+              value={commander}
+              onChange={(e) => setCommander(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && explore()}
+            />
+            <button className="btn-send" disabled={busy || !commander.trim()} onClick={explore}>
+              {busy && !strategies ? 'Exploring…' : 'Explore strategies'}
+            </button>
+          </div>
+          <div className="composer__hint">
+            Pick a build direction, then get real, on-strategy card recommendations sourced from Scryfall.
+          </div>
         </div>
-        <div className="composer__hint">
-          Pick a build direction, then get real, on-strategy card recommendations sourced from Scryfall.
-        </div>
-      </div>
+      )}
     </>
   );
 }

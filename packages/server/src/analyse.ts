@@ -146,39 +146,35 @@ export function chatDeck(
   });
 }
 
-/** Stream build-mode advice for a commander and/or a described strategy. */
-export function buildAdvice(opts: { commander?: Card; strategy?: string }): AsyncGenerator<string> {
-  const parts: string[] = ['Help the player build a Commander deck, per your doctrine.'];
-
-  if (opts.commander) {
-    parts.push('\n# VERIFIED COMMANDER DATA (from live Scryfall)');
-    parts.push(cardLine(1, opts.commander));
-  }
-  if (opts.strategy) {
-    parts.push(`\n# Player's stated strategy / request\n${opts.strategy}`);
-  }
-  if (!opts.commander && !opts.strategy) {
-    parts.push('\nThe player has not yet named a commander or strategy — ask focused questions to get started.');
-  } else {
-    parts.push(
-      '\nGive targeted recommendations: the gameplan, then key cards grouped by role ' +
-        '(Ramp, Card Advantage, Targeted/Mass Disruption, Plan Cards) with a one-line reason each, ' +
-        'and what makes this direction distinct from the popular build.',
-    );
-    parts.push(
-      '\nTOOLS: use `search_cards` to find REAL Commander-legal cards for each role within this ' +
-        "strategy (colour identity is applied automatically), and `get_card` to verify a card's text. " +
-        'Recommend ONLY real cards you have looked up — never suggest a card or describe its text from memory. ' +
-        'Make a FEW targeted searches (roughly one or two per role), then write your recommendations — do not ' +
-        'exhaustively search every phrasing. Do NOT narrate or announce your searches; call the tools silently ' +
-        'and output only your final recommendation.',
-    );
-  }
+/**
+ * Conversational build mode: produces the initial build around a chosen
+ * strategy and then answers follow-up questions, all grounded in live Scryfall
+ * via tools. `history` is the conversation after the build context (empty for
+ * the very first build).
+ */
+export function buildChat(
+  commander: Card,
+  strategy: string,
+  history: { role: 'user' | 'assistant'; content: string }[],
+): AsyncGenerator<string> {
+  const context = [
+    'Help the player build a Commander deck around the chosen strategy, per your doctrine.',
+    '\n# VERIFIED COMMANDER DATA (from live Scryfall)',
+    cardLine(1, commander),
+    `\n# Chosen strategy\n${strategy}`,
+    '\nGive the build as sections by role, in this order: Lands, Ramp, Card Advantage, Targeted Disruption, Mass Disruption, Plan Cards.',
+    'ALWAYS INCLUDE A LANDS SECTION: recommend the total land count (around the 38 baseline, adjusted for the curve), name the key nonbasic / utility lands (find them with search_cards using t:land), and give a basic-land split for the remainder.',
+    'Beside EVERY category heading, put the number of cards you are recommending for it, e.g. "## Ramp (10)" or "### Lands (38)". The category counts should add up to roughly 99 (the deck minus the commander); say so.',
+    'Briefly note what makes this direction distinct from the popular build.',
+    '\nTOOLS: use `search_cards` to find REAL Commander-legal cards for each role within this strategy (colour identity is applied automatically), and `get_card` to verify a card\'s text. Recommend ONLY real cards you have looked up — never suggest a card or describe its text from memory. Make a few targeted searches per role, then write the build. Do NOT narrate or announce your searches; call the tools silently and output only the build.',
+    '\nAfter the initial build, answer any follow-up questions the player asks, staying grounded in real card data via the tools.',
+  ].join('\n');
 
   return streamModelWithTools({
     systemBlocks: systemBlocks(),
-    messages: [{ role: 'user', content: parts.join('\n') }],
+    messages: [{ role: 'user', content: context }, ...history],
     tools: CHAT_TOOLS,
-    runTool: makeToolRunner(opts.commander?.colorIdentity ?? []),
+    runTool: makeToolRunner(commander.colorIdentity),
+    maxTurns: 6,
   });
 }

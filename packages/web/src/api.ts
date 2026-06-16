@@ -174,7 +174,14 @@ export function streamAnalyse(deck: CategorizedDeck, h: StreamHandlers): void {
   void streamPost('/api/analyse', { deck }, h);
 }
 
-export function streamBuild(input: { commander?: string; strategy?: string }, h: StreamHandlers): void {
+export function streamBuild(
+  input: {
+    commander: string;
+    strategy: string;
+    messages?: { role: 'user' | 'assistant'; content: string }[];
+  },
+  h: StreamHandlers,
+): void {
   void streamPost('/api/build', input, h);
 }
 
