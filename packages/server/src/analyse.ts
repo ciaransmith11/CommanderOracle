@@ -1,7 +1,8 @@
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { SLOT_BASELINES, DESIGN_PHILOSOPHY } from '@commander-oracle/core';
-import { streamModel } from './anthropic.js';
+import { streamModel, streamModelWithTools } from './anthropic.js';
 import { systemBlocks } from './prompt.js';
+import { CHAT_TOOLS, makeToolRunner } from './chat-tools.js';
 
 /**
  * Orchestrates the model call. Builds a verified, structured deck description as
@@ -102,16 +103,23 @@ export function chatDeck(
     '(You have already given the user the initial three-section analysis. Answer their follow-up ' +
     'questions about THIS deck using the verified data above. You may now provide deeper detail on ' +
     'request — imbalances, mana-curve breakdowns, specific cuts, or additions.\n\n' +
+    'TOOLS: You have `search_cards` (find real Commander-legal cards by mechanic — the colour ' +
+    'identity and legality are applied for you) and `get_card` (verify one card\'s exact text). You ' +
+    'MUST use them to ground card recommendations in real Scryfall data — NEVER suggest a card to ' +
+    'add, or describe a card\'s text, from memory. Before recommending additions, search for cards ' +
+    'that fill the UNDER-filled roles within the strategy, then recommend the best real matches.\n\n' +
     'When recommending CUTS or ADDITIONS you MUST:\n' +
     "1. Ground every suggestion in this commander's strategy AND in the slot-audit counts from your initial analysis — restate the relevant count (e.g. \"Targeted Disruption is already 14/12\") before suggesting a change there.\n" +
-    '2. NEVER suggest adding a card to a category that is already at or above its baseline. Direct additions to the UNDER-filled roles only.\n' +
+    '2. NEVER suggest adding a card to a category that is already at or above its baseline. Direct additions to the UNDER-filled roles only, and source them via search_cards.\n' +
     '3. NEVER cut a card that is core to the strategy or a key synergy/win-condition piece. Cut over-represented, off-strategy, redundant, or low-impact cards instead — and say which.\n' +
     '4. For each cut and each addition, name the slot count it addresses and the part of the strategy it serves.\n\n' +
-    'Stay grounded in the provided card data; never invent card text.)';
+    'Stay grounded in real card data; never invent card text.)';
 
-  return streamModel({
+  return streamModelWithTools({
     systemBlocks: systemBlocks(),
     messages: [{ role: 'user', content: context }, ...history],
+    tools: CHAT_TOOLS,
+    runTool: makeToolRunner(deck),
   });
 }
 

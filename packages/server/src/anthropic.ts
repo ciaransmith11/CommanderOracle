@@ -94,6 +94,76 @@ function describeError(err: unknown): string {
   return status ? `${status} ${message}` : message;
 }
 
+export interface ToolStreamOptions extends StreamOptions {
+  tools: Anthropic.Tool[];
+  /** Executes a tool call and returns its result text. */
+  runTool: (name: string, input: unknown) => Promise<string>;
+  /** Safety cap on tool round-trips. */
+  maxTurns?: number;
+}
+
+/** Stream one model turn (with tools available), yielding text and returning the final message. */
+async function* streamTurn(
+  messages: Anthropic.Messages.MessageParam[],
+  opts: ToolStreamOptions,
+): AsyncGenerator<string, Anthropic.Messages.Message> {
+  for (let attempt = 1; ; attempt++) {
+    let emitted = false;
+    try {
+      const stream = getClient().messages.stream({
+        model: ENV.model,
+        max_tokens: opts.maxTokens ?? ENV.maxTokens,
+        system: opts.systemBlocks,
+        tools: opts.tools,
+        messages,
+      });
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          emitted = true;
+          yield event.delta.text;
+        }
+      }
+      return await stream.finalMessage();
+    } catch (err) {
+      if (emitted || attempt >= MAX_STREAM_ATTEMPTS || !isRetryable(err)) throw err;
+      const delay = 500 * 2 ** (attempt - 1);
+      console.warn(`model stream attempt ${attempt} failed (${describeError(err)}); retrying in ${delay}ms`);
+      await sleep(delay);
+    }
+  }
+}
+
+/**
+ * Stream a model response that may call tools. Runs the tool-use loop
+ * server-side (executing tools, feeding results back) and streams text the
+ * whole time — the caller still just consumes strings.
+ */
+export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<string> {
+  const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
+  const maxTurns = opts.maxTurns ?? 5;
+
+  for (let turn = 0; turn < maxTurns; turn++) {
+    const final = yield* streamTurn(messages, opts);
+    messages.push({ role: 'assistant', content: final.content as unknown as Anthropic.Messages.ContentBlockParam[] });
+
+    if (final.stop_reason !== 'tool_use') return;
+
+    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+    for (const block of final.content) {
+      if (block.type === 'tool_use') {
+        let result: string;
+        try {
+          result = await opts.runTool(block.name, block.input);
+        } catch (err) {
+          result = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+      }
+    }
+    messages.push({ role: 'user', content: toolResults });
+  }
+}
+
 /**
  * One-shot non-streaming call that expects a JSON object back. Tolerant of code
  * fences / surrounding prose — extracts the first {...} block. Returns null if
