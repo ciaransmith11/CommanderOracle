@@ -141,25 +141,47 @@ async function* streamTurn(
   }
 }
 
+/** Run a turn to completion WITHOUT streaming its text (used for the silent gather phase). */
+async function runTurnSilently(
+  messages: Anthropic.Messages.MessageParam[],
+  opts: ToolStreamOptions,
+): Promise<{ text: string; message: Anthropic.Messages.Message }> {
+  const gen = streamTurn(messages, opts, false);
+  let text = '';
+  let next = await gen.next();
+  while (!next.done) {
+    text += next.value;
+    next = await gen.next();
+  }
+  return { text, message: next.value };
+}
+
 /**
- * Stream a model response that may call tools. Runs the tool-use loop
- * server-side (executing tools, feeding results back) and streams text the
- * whole time — the caller still just consumes strings.
+ * Stream a model response that may call tools, but only ever surface the FINAL
+ * answer to the caller. Tool calls and the model's intermediate "thinking"
+ * (e.g. "let me search…") run SILENTLY server-side; the caller streams nothing
+ * during that time (the UI shows a thinking indicator), then receives only the
+ * finished result. This prevents narration leaking and prevents a stalled
+ * intermediate turn from being mistaken for the answer.
  */
 export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<string> {
   const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
-  const maxTurns = opts.maxTurns ?? 4;
+  const maxToolTurns = opts.maxTurns ?? 4;
 
-  for (let turn = 0; turn < maxTurns; turn++) {
-    // On the final allowed turn, force a text answer (tool_choice: none) so the
-    // model can't keep requesting tools and get cut off with no output.
-    const final = yield* streamTurn(messages, opts, turn === maxTurns - 1);
-    messages.push({ role: 'assistant', content: final.content as unknown as Anthropic.Messages.ContentBlockParam[] });
+  let usedTools = false;
+  let lastText = '';
 
-    if (final.stop_reason !== 'tool_use') return;
+  // Gather phase — silent. Keep letting the model call tools until it stops.
+  for (let turn = 0; turn < maxToolTurns; turn++) {
+    const { text, message } = await runTurnSilently(messages, opts);
+    lastText = text;
+    messages.push({ role: 'assistant', content: message.content as unknown as Anthropic.Messages.ContentBlockParam[] });
 
-    const userContent: Anthropic.Messages.ContentBlockParam[] = [];
-    for (const block of final.content) {
+    if (message.stop_reason !== 'tool_use') break;
+    usedTools = true;
+
+    const toolResults: Anthropic.Messages.ContentBlockParam[] = [];
+    for (const block of message.content) {
       if (block.type === 'tool_use') {
         let result: string;
         try {
@@ -167,19 +189,32 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
         } catch (err) {
           result = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
         }
-        userContent.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
       }
     }
-    // If the next turn is the forced final turn, instruct the model to stop
-    // searching and write its answer — `tool_choice: none` alone leaves it empty.
-    if (turn === maxTurns - 2) {
-      userContent.push({
-        type: 'text',
-        text: 'You now have enough information. Stop searching and write your complete final response as text now, using the results above.',
-      });
-    }
-    messages.push({ role: 'user', content: userContent });
+    messages.push({ role: 'user', content: toolResults });
   }
+
+  // If the model answered directly without ever calling a tool, that text IS the
+  // answer — emit it (no extra model call).
+  if (!usedTools) {
+    if (lastText) yield lastText;
+    return;
+  }
+
+  // Tools were used: force one clean final answer and stream it. Any narration
+  // the model produced mid-gather is discarded.
+  const nudge: Anthropic.Messages.TextBlockParam = {
+    type: 'text',
+    text: 'Stop searching now and write your complete final response as text, using everything gathered above. Do not mention searching or your process.',
+  };
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'user' && Array.isArray(last.content)) {
+    last.content.push(nudge);
+  } else {
+    messages.push({ role: 'user', content: [nudge] });
+  }
+  yield* streamTurn(messages, opts, true);
 }
 
 /**

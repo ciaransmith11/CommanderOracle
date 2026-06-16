@@ -175,6 +175,6 @@ export function buildChat(
     messages: [{ role: 'user', content: context }, ...history],
     tools: CHAT_TOOLS,
     runTool: makeToolRunner(commander.colorIdentity),
-    maxTurns: 6,
+    maxTurns: 5,
   });
 }
