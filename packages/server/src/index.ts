@@ -6,7 +6,7 @@ import { categorise, parseDecklist } from '@commander-oracle/core';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import { fetchCollection, namedCard, resolveEntries } from './scryfall.js';
-import { analyseDeck, buildAdvice, chatDeck } from './analyse.js';
+import { analyseDeck, buildAdvice, chatDeck, proposeStrategies } from './analyse.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
 import { messages, sessions } from './db.js';
 
@@ -91,6 +91,19 @@ app.post('/api/chat', async (c) => {
     return c.json({ error: 'missing deck or messages' }, 400);
   }
   return sseFromGenerator(c, () => chatDeck(body.deck!, body.messages!));
+});
+
+app.post('/api/build/strategies', async (c) => {
+  if (!hasApiKey()) return c.json({ error: 'ANTHROPIC_API_KEY not set' }, 503);
+  const body = await c.req.json<{ commander?: string }>();
+  if (!body.commander?.trim()) return c.json({ error: 'missing commander' }, 400);
+
+  const { cards } = await fetchCollection([body.commander]);
+  const commander = cards[0];
+  if (!commander) return c.json({ error: `commander not found: ${body.commander}` }, 404);
+
+  const strategies = await proposeStrategies(commander);
+  return c.json({ commander, strategies });
 });
 
 app.post('/api/build', async (c) => {

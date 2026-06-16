@@ -102,10 +102,14 @@ export interface ToolStreamOptions extends StreamOptions {
   maxTurns?: number;
 }
 
-/** Stream one model turn (with tools available), yielding text and returning the final message. */
+/**
+ * Stream one model turn, yielding text and returning the final message.
+ * `tools` is passed per-turn so the final turn can omit them, forcing a text answer.
+ */
 async function* streamTurn(
   messages: Anthropic.Messages.MessageParam[],
   opts: ToolStreamOptions,
+  tools: Anthropic.Tool[] | undefined,
 ): AsyncGenerator<string, Anthropic.Messages.Message> {
   for (let attempt = 1; ; attempt++) {
     let emitted = false;
@@ -114,7 +118,7 @@ async function* streamTurn(
         model: ENV.model,
         max_tokens: opts.maxTokens ?? ENV.maxTokens,
         system: opts.systemBlocks,
-        tools: opts.tools,
+        ...(tools && tools.length ? { tools } : {}),
         messages,
       });
       for await (const event of stream) {
@@ -140,10 +144,13 @@ async function* streamTurn(
  */
 export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<string> {
   const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
-  const maxTurns = opts.maxTurns ?? 5;
+  const maxTurns = opts.maxTurns ?? 8;
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    const final = yield* streamTurn(messages, opts);
+    // On the final allowed turn, withhold tools so the model MUST produce a
+    // text answer instead of requesting yet another tool call.
+    const tools = turn === maxTurns - 1 ? undefined : opts.tools;
+    const final = yield* streamTurn(messages, opts, tools);
     messages.push({ role: 'assistant', content: final.content as unknown as Anthropic.Messages.ContentBlockParam[] });
 
     if (final.stop_reason !== 'tool_use') return;

@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { Card, CategorizedDeck } from '@commander-oracle/shared';
+import type { Card } from '@commander-oracle/shared';
 import { namedCard, searchCards } from './scryfall.js';
 
 /**
@@ -48,11 +48,11 @@ function cardLine(card: Card): string {
 }
 
 /**
- * Build the tool executor bound to a deck — search results are constrained to
- * the commander's colour identity so suggested additions are always legal.
+ * Build the tool executor bound to a colour identity — search results are
+ * constrained to it so suggested cards are always Commander-legal for the deck.
  */
-export function makeToolRunner(deck: CategorizedDeck): (name: string, input: unknown) => Promise<string> {
-  const colors = deck.commander[0]?.colorIdentity ?? [];
+export function makeToolRunner(colorIdentity: string[]): (name: string, input: unknown) => Promise<string> {
+  const colors = colorIdentity;
 
   return async (name, input) => {
     const args = (input ?? {}) as { query?: string; name?: string };

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CategorizedDeck } from '@commander-oracle/shared';
+import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import {
   api,
   streamAnalyse,
   streamBuild,
   streamChat,
   streamRecommend,
+  type BuildStrategy,
   type Health,
   type RecommendMeta,
   type SessionMeta,
@@ -209,14 +210,6 @@ export function App() {
     });
   }
 
-  function handleBuild(commander: string, strategy: string) {
-    const summary = [commander && `Commander: ${commander}`, strategy].filter(Boolean).join('\n');
-    const title = commander || strategy.slice(0, 40) || 'Build session';
-    runStream('build', title, { role: 'user', content: summary }, null, (h) =>
-      streamBuild({ commander: commander || undefined, strategy: strategy || undefined }, h),
-    );
-  }
-
   // Every card in the active deck (commander + all sections), with image data —
   // used to reliably highlight card names in the analysis without lookups.
   const deckItemForCards = items.find((i) => i.role === 'deck');
@@ -253,18 +246,16 @@ export function App() {
 
         {tab === 'recommend' ? (
           <RecommendTab />
+        ) : tab === 'build' ? (
+          <BuildTab />
         ) : (
           <>
             <div className="content" ref={contentRef}>
               <div className="thread">
                 {items.length === 0 && !streaming && (
                   <div className="placeholder">
-                    <h2>{tab === 'analyse' ? 'Analyse a deck' : 'Build a deck'}</h2>
-                    <p>
-                      {tab === 'analyse'
-                        ? 'Add your commander and 99-card decklist below.'
-                        : 'Name a commander and/or describe a strategy to get targeted recommendations.'}
-                    </p>
+                    <h2>Analyse a deck</h2>
+                    <p>Add your commander and 99-card decklist below.</p>
                   </div>
                 )}
                 {items.map((item, i) =>
@@ -288,14 +279,10 @@ export function App() {
                 {error && <div className="error-banner">⚠ {error}</div>}
               </div>
             </div>
-            {tab === 'analyse' ? (
-              items.some((i) => i.role === 'assistant') ? (
-                <ChatComposer busy={busy} onSubmit={handleFollowup} />
-              ) : (
-                <AnalyseComposer busy={busy} onSubmit={handleAnalyse} />
-              )
+            {items.some((i) => i.role === 'assistant') ? (
+              <ChatComposer busy={busy} onSubmit={handleFollowup} />
             ) : (
-              <BuildComposer busy={busy} onSubmit={handleBuild} />
+              <AnalyseComposer busy={busy} onSubmit={handleAnalyse} />
             )}
           </>
         )}
@@ -378,41 +365,143 @@ function ChatComposer({ busy, onSubmit }: { busy: boolean; onSubmit: (text: stri
   );
 }
 
-function BuildComposer({
-  busy,
-  onSubmit,
-}: {
-  busy: boolean;
-  onSubmit: (commander: string, strategy: string) => void;
-}) {
+function BuildTab() {
   const [commander, setCommander] = useState('');
-  const [strategy, setStrategy] = useState('');
+  const [commanderCard, setCommanderCard] = useState<Card | null>(null);
+  const [strategies, setStrategies] = useState<BuildStrategy[] | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [custom, setCustom] = useState('');
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const acc = useRef('');
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
+  }, [text, strategies, chosen]);
+
+  async function explore() {
+    if (!commander.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    setStrategies(null);
+    setChosen(null);
+    setText('');
+    try {
+      const r = await api.buildStrategies(commander.trim());
+      setCommanderCard(r.commander);
+      setStrategies(r.strategies);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function choose(strategy: string) {
+    if (!strategy.trim() || busy) return;
+    setChosen(strategy);
+    setText('');
+    acc.current = '';
+    setBusy(true);
+    setError(null);
+    streamBuild(
+      { commander: commander.trim(), strategy },
+      {
+        onDelta: (t) => {
+          acc.current += t;
+          setText(acc.current);
+        },
+        onDone: () => setBusy(false),
+        onError: (m) => {
+          setError(m);
+          setBusy(false);
+        },
+      },
+    );
+  }
+
   return (
-    <div className="composer">
-      <div className="composer__row">
-        <input
-          type="text"
-          placeholder="Commander (e.g. Krenko, Mob Boss)"
-          value={commander}
-          onChange={(e) => setCommander(e.target.value)}
-        />
+    <>
+      <div className="content" ref={contentRef}>
+        <div className="thread">
+          {!strategies && !busy && !text && (
+            <div className="placeholder">
+              <h2>Build a deck</h2>
+              <p>Name a commander to see distinct ways to build around it, then pick a direction.</p>
+            </div>
+          )}
+
+          {commanderCard && strategies && !chosen && (
+            <div className="echo">
+              <div className="echo__head">
+                <span className="echo__title">{commanderCard.name}</span>
+                <span className="echo__meta">{commanderCard.typeLine}</span>
+              </div>
+              <p style={{ marginTop: 0, color: 'var(--inkMid)' }}>Choose a direction to build around:</p>
+              {strategies.map((s) => (
+                <button
+                  key={s.name}
+                  className="strategy-card"
+                  onClick={() => choose(`${s.name}: ${s.description}`)}
+                >
+                  <strong>{s.name}</strong>
+                  <span>{s.description}</span>
+                </button>
+              ))}
+              <div className="composer__row" style={{ margin: '12px 0 0' }}>
+                <input
+                  type="text"
+                  placeholder="…or describe your own direction"
+                  value={custom}
+                  onChange={(e) => setCustom(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && choose(custom)}
+                />
+                <button className="btn-send" disabled={!custom.trim()} onClick={() => choose(custom)}>
+                  Build
+                </button>
+              </div>
+            </div>
+          )}
+
+          {chosen && (
+            <>
+              <div className="bubble bubble--user">Building around: {chosen}</div>
+              {text && (
+                <div className="bubble bubble--assistant">
+                  <Markdown text={text} streaming={busy} />
+                </div>
+              )}
+              {!busy && strategies && (
+                <button className="linkish" onClick={() => setChosen(null)}>
+                  ← choose a different direction
+                </button>
+              )}
+            </>
+          )}
+
+          {error && <div className="error-banner">⚠ {error}</div>}
+        </div>
       </div>
-      <div className="composer__inner">
-        <textarea
-          placeholder="Describe your strategy or what you want help with…"
-          value={strategy}
-          onChange={(e) => setStrategy(e.target.value)}
-          rows={2}
-        />
-        <button
-          className="btn-send"
-          disabled={busy || (!commander.trim() && !strategy.trim())}
-          onClick={() => onSubmit(commander, strategy)}
-        >
-          {busy ? 'Thinking…' : 'Get advice'}
-        </button>
+      <div className="composer">
+        <div className="composer__inner">
+          <input
+            type="text"
+            placeholder="Commander (e.g. Krenko, Mob Boss)"
+            value={commander}
+            onChange={(e) => setCommander(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && explore()}
+          />
+          <button className="btn-send" disabled={busy || !commander.trim()} onClick={explore}>
+            {busy && !strategies ? 'Exploring…' : 'Explore strategies'}
+          </button>
+        </div>
+        <div className="composer__hint">
+          Pick a build direction, then get real, on-strategy card recommendations sourced from Scryfall.
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

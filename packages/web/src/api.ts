@@ -38,6 +38,13 @@ export const api = {
   lookupCard: (name: string) =>
     fetch(`/api/card?name=${encodeURIComponent(name)}`).then(json<{ card: Card }>),
 
+  buildStrategies: (commander: string) =>
+    fetch('/api/build/strategies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commander }),
+    }).then(json<{ commander: Card; strategies: BuildStrategy[] }>),
+
   echo: (text: string, commander?: string) =>
     fetch('/api/echo', {
       method: 'POST',
@@ -73,6 +80,11 @@ export const api = {
 export interface RecommendMeta {
   queries: string[];
   candidateCount: number;
+}
+
+export interface BuildStrategy {
+  name: string;
+  description: string;
 }
 
 export interface StreamHandlers {

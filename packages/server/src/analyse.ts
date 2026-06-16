@@ -1,8 +1,30 @@
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { SLOT_BASELINES, DESIGN_PHILOSOPHY } from '@commander-oracle/core';
-import { streamModel, streamModelWithTools } from './anthropic.js';
-import { systemBlocks } from './prompt.js';
+import { callModelJSON, streamModel, streamModelWithTools } from './anthropic.js';
+import { strategySystemBlocks, systemBlocks } from './prompt.js';
 import { CHAT_TOOLS, makeToolRunner } from './chat-tools.js';
+
+export interface BuildStrategy {
+  name: string;
+  description: string;
+}
+
+/** Propose distinct viable build directions for a commander (for the user to choose from). */
+export async function proposeStrategies(commander: Card): Promise<BuildStrategy[]> {
+  const data = await callModelJSON({
+    systemBlocks: strategySystemBlocks(),
+    userContent: `Commander:\n${cardLine(1, commander)}`,
+    maxTokens: 1024,
+  });
+  const strategies = (data as { strategies?: unknown })?.strategies;
+  if (!Array.isArray(strategies)) return [];
+  return strategies
+    .filter(
+      (s): s is BuildStrategy =>
+        !!s && typeof (s as BuildStrategy).name === 'string' && typeof (s as BuildStrategy).description === 'string',
+    )
+    .slice(0, 4);
+}
 
 /**
  * Orchestrates the model call. Builds a verified, structured deck description as
@@ -107,7 +129,8 @@ export function chatDeck(
     'identity and legality are applied for you) and `get_card` (verify one card\'s exact text). You ' +
     'MUST use them to ground card recommendations in real Scryfall data — NEVER suggest a card to ' +
     'add, or describe a card\'s text, from memory. Before recommending additions, search for cards ' +
-    'that fill the UNDER-filled roles within the strategy, then recommend the best real matches.\n\n' +
+    'that fill the UNDER-filled roles within the strategy, then recommend the best real matches. Do ' +
+    'NOT narrate or announce your searches; call the tools silently and answer directly.\n\n' +
     'When recommending CUTS or ADDITIONS you MUST:\n' +
     "1. Ground every suggestion in this commander's strategy AND in the slot-audit counts from your initial analysis — restate the relevant count (e.g. \"Targeted Disruption is already 14/12\") before suggesting a change there.\n" +
     '2. NEVER suggest adding a card to a category that is already at or above its baseline. Direct additions to the UNDER-filled roles only, and source them via search_cards.\n' +
@@ -119,7 +142,7 @@ export function chatDeck(
     systemBlocks: systemBlocks(),
     messages: [{ role: 'user', content: context }, ...history],
     tools: CHAT_TOOLS,
-    runTool: makeToolRunner(deck),
+    runTool: makeToolRunner(deck.commander[0]?.colorIdentity ?? []),
   });
 }
 
@@ -138,14 +161,24 @@ export function buildAdvice(opts: { commander?: Card; strategy?: string }): Asyn
     parts.push('\nThe player has not yet named a commander or strategy — ask focused questions to get started.');
   } else {
     parts.push(
-      '\nGive targeted recommendations: the gameplan, key cards by role (with one-line reasons), ' +
-        'and what makes this direction distinct from the popular build. Reason only from provided data; ' +
-        'do not invent card text.',
+      '\nGive targeted recommendations: the gameplan, then key cards grouped by role ' +
+        '(Ramp, Card Advantage, Targeted/Mass Disruption, Plan Cards) with a one-line reason each, ' +
+        'and what makes this direction distinct from the popular build.',
+    );
+    parts.push(
+      '\nTOOLS: use `search_cards` to find REAL Commander-legal cards for each role within this ' +
+        "strategy (colour identity is applied automatically), and `get_card` to verify a card's text. " +
+        'Recommend ONLY real cards you have looked up — never suggest a card or describe its text from memory. ' +
+        'Make a FEW targeted searches (roughly one or two per role), then write your recommendations — do not ' +
+        'exhaustively search every phrasing. Do NOT narrate or announce your searches; call the tools silently ' +
+        'and output only your final recommendation.',
     );
   }
 
-  return streamModel({
+  return streamModelWithTools({
     systemBlocks: systemBlocks(),
     messages: [{ role: 'user', content: parts.join('\n') }],
+    tools: CHAT_TOOLS,
+    runTool: makeToolRunner(opts.commander?.colorIdentity ?? []),
   });
 }

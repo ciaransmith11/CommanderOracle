@@ -599,6 +599,46 @@ button {
   font-size: 13px;
 }
 
+/* Build: selectable strategy directions */
+.strategy-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bronzeBorder);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.strategy-card:hover {
+  background: var(--bronzePale);
+}
+.strategy-card strong {
+  display: block;
+  font-family: 'Outfit', sans-serif;
+  color: var(--bronze);
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.strategy-card span {
+  font-size: 13px;
+  color: var(--inkMid);
+}
+.linkish {
+  background: none;
+  border: none;
+  color: var(--bronze);
+  font-size: 13px;
+  padding: 4px 0;
+  align-self: flex-start;
+}
+.linkish:hover {
+  text-decoration: underline;
+}
+
 /* single-card lookup result */
 .card-result {
   display: flex;

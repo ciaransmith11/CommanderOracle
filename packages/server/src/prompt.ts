@@ -117,6 +117,24 @@ You are given a POOL of real candidate cards fetched live from Scryfall, each wi
 
 Format clean Markdown. Be concise — every line should justify the card. Output only your final answer: no narrated reasoning, no self-corrections, no restarts. Bold every card name so the interface can link it.`;
 
+/**
+ * Proposes distinct viable build directions for a commander, so the user can
+ * choose a gameplan before the full build. JSON out, grounded in oracle text.
+ */
+const STRATEGY_PROPOSER = `You are Commander Oracle. Given a single commander (with its real oracle text), propose 3–4 DISTINCT, viable ways to build a Commander deck around it.
+
+Rules:
+- Each option must be a genuinely different archetype or gameplan — not minor variations of one idea.
+- Ground every option in what the commander ACTUALLY does (use the provided oracle text); never invent abilities.
+- Order from the most synergistic / popular direction to the more niche or spicy ones.
+
+Return ONLY a JSON object, no prose:
+{"strategies":[{"name":"<3–6 word label>","description":"<1–2 sentences: the gameplan and why it fits this commander>"}]}`;
+
+export function strategySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
+  return [{ type: 'text', text: STRATEGY_PROPOSER, cache_control: { type: 'ephemeral' } }];
+}
+
 export function querySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: QUERY_WRITER, cache_control: { type: 'ephemeral' } }];
 }
