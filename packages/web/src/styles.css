@@ -584,6 +584,14 @@ button {
   color: var(--bronzeLight);
   animation: blink 1s step-end infinite;
 }
+
+.working {
+  color: var(--inkMute);
+  font-style: italic;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
 @keyframes blink {
   50% {
     opacity: 0;

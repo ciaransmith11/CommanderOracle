@@ -109,16 +109,20 @@ export interface ToolStreamOptions extends StreamOptions {
 async function* streamTurn(
   messages: Anthropic.Messages.MessageParam[],
   opts: ToolStreamOptions,
-  tools: Anthropic.Tool[] | undefined,
+  forceAnswer: boolean,
 ): AsyncGenerator<string, Anthropic.Messages.Message> {
   for (let attempt = 1; ; attempt++) {
     let emitted = false;
     try {
+      // Always keep the tool definitions present (the message history references
+      // them); `tool_choice: none` is how we force a text answer on the final
+      // turn — omitting tools entirely makes the model return an empty turn.
       const stream = getClient().messages.stream({
         model: ENV.model,
         max_tokens: opts.maxTokens ?? ENV.maxTokens,
         system: opts.systemBlocks,
-        ...(tools && tools.length ? { tools } : {}),
+        tools: opts.tools,
+        tool_choice: forceAnswer ? { type: 'none' } : { type: 'auto' },
         messages,
       });
       for await (const event of stream) {
@@ -144,18 +148,17 @@ async function* streamTurn(
  */
 export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<string> {
   const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
-  const maxTurns = opts.maxTurns ?? 8;
+  const maxTurns = opts.maxTurns ?? 4;
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    // On the final allowed turn, withhold tools so the model MUST produce a
-    // text answer instead of requesting yet another tool call.
-    const tools = turn === maxTurns - 1 ? undefined : opts.tools;
-    const final = yield* streamTurn(messages, opts, tools);
+    // On the final allowed turn, force a text answer (tool_choice: none) so the
+    // model can't keep requesting tools and get cut off with no output.
+    const final = yield* streamTurn(messages, opts, turn === maxTurns - 1);
     messages.push({ role: 'assistant', content: final.content as unknown as Anthropic.Messages.ContentBlockParam[] });
 
     if (final.stop_reason !== 'tool_use') return;
 
-    const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
+    const userContent: Anthropic.Messages.ContentBlockParam[] = [];
     for (const block of final.content) {
       if (block.type === 'tool_use') {
         let result: string;
@@ -164,10 +167,18 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
         } catch (err) {
           result = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
         }
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+        userContent.push({ type: 'tool_result', tool_use_id: block.id, content: result });
       }
     }
-    messages.push({ role: 'user', content: toolResults });
+    // If the next turn is the forced final turn, instruct the model to stop
+    // searching and write its answer — `tool_choice: none` alone leaves it empty.
+    if (turn === maxTurns - 2) {
+      userContent.push({
+        type: 'text',
+        text: 'You now have enough information. Stop searching and write your complete final response as text now, using the results above.',
+      });
+    }
+    messages.push({ role: 'user', content: userContent });
   }
 }
 

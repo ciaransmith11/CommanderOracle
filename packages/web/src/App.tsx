@@ -276,6 +276,7 @@ export function App() {
                     <Markdown text={streaming} streaming cards={deckCards} />
                   </div>
                 )}
+                {busy && !streaming && <WorkingBubble label="Working…" />}
                 {error && <div className="error-banner">⚠ {error}</div>}
               </div>
             </div>
@@ -329,6 +330,15 @@ function AnalyseComposer({
         Counts and categories are computed deterministically from live Scryfall data — the model does
         judgment only.
       </div>
+    </div>
+  );
+}
+
+function WorkingBubble({ label }: { label: string }) {
+  return (
+    <div className="bubble bubble--assistant working">
+      <span>{label}</span>
+      <span className="cursor" />
     </div>
   );
 }
@@ -433,6 +443,8 @@ function BuildTab() {
             </div>
           )}
 
+          {busy && !strategies && !chosen && <WorkingBubble label="Finding build directions…" />}
+
           {commanderCard && strategies && !chosen && (
             <div className="echo">
               <div className="echo__head">
@@ -468,6 +480,7 @@ function BuildTab() {
           {chosen && (
             <>
               <div className="bubble bubble--user">Building around: {chosen}</div>
+              {busy && !text && <WorkingBubble label="Searching Scryfall and assembling your build…" />}
               {text && (
                 <div className="bubble bubble--assistant">
                   <Markdown text={text} streaming={busy} />
