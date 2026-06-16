@@ -5,6 +5,7 @@ import { streamSSE } from 'hono/streaming';
 import { categorise, parseDecklist } from '@commander-oracle/core';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
+import type { ModelEvent } from './anthropic.js';
 import { fetchCollection, namedCard, resolveEntries } from './scryfall.js';
 import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
@@ -59,12 +60,18 @@ app.post('/api/echo', async (c) => {
 // --- Phase 2: streamed model analysis -------------------------------------
 
 /** Stream an async text generator out as SSE `delta` events, then `done`. */
-function sseFromGenerator(c: Context, gen: () => AsyncGenerator<string>) {
+function sseFromGenerator(c: Context, gen: () => AsyncGenerator<string | ModelEvent>) {
   return streamSSE(c, async (stream) => {
     try {
       for await (const chunk of gen()) {
-        // JSON-encode so newlines in the markdown survive SSE framing.
-        await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text: chunk }) });
+        if (typeof chunk === 'string') {
+          // JSON-encode so newlines in the markdown survive SSE framing.
+          await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text: chunk }) });
+        } else if (chunk.type === 'status') {
+          await stream.writeSSE({ event: 'status', data: JSON.stringify({ text: chunk.text }) });
+        } else {
+          await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text: chunk.text }) });
+        }
       }
       await stream.writeSSE({ event: 'done', data: '{}' });
     } catch (err) {

@@ -38,6 +38,7 @@ export function App() {
   const [items, setItems] = useState<Item[]>([]);
   const [streaming, setStreaming] = useState('');
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const streamRef = useRef('');
@@ -97,6 +98,7 @@ export function App() {
     userItem: Item,
     deckItem: Item | null,
     start: (h: {
+      onStatus: (text: string) => void;
       onDelta: (t: string) => void;
       onDone: () => void;
       onError: (m: string) => void;
@@ -124,7 +126,9 @@ export function App() {
       }
 
       start({
+        onStatus: setStatus,
         onDelta: (t) => {
+          setStatus('');
           streamRef.current += t;
           setStreaming(streamRef.current);
         },
@@ -132,12 +136,14 @@ export function App() {
           const full = streamRef.current;
           setItems((prev) => [...prev, { role: 'assistant', content: full }]);
           setStreaming('');
+          setStatus('');
           setBusy(false);
           if (sid) void api.addMessage(sid, 'assistant', full);
         },
         onError: (m) => {
           setError(m);
           setStreaming('');
+          setStatus('');
           setBusy(false);
         },
       });
@@ -191,7 +197,9 @@ export function App() {
     if (sid) void api.addMessage(sid, 'user', text);
 
     streamChat(deckItem.deck, history, {
+      onStatus: setStatus,
       onDelta: (t) => {
+        setStatus('');
         streamRef.current += t;
         setStreaming(streamRef.current);
       },
@@ -199,12 +207,14 @@ export function App() {
         const full = streamRef.current;
         setItems((prev) => [...prev, { role: 'assistant', content: full }]);
         setStreaming('');
+        setStatus('');
         setBusy(false);
         if (sid) void api.addMessage(sid, 'assistant', full);
       },
       onError: (m) => {
         setError(m);
         setStreaming('');
+        setStatus('');
         setBusy(false);
       },
     });
@@ -276,7 +286,7 @@ export function App() {
                     <Markdown text={streaming} streaming cards={deckCards} />
                   </div>
                 )}
-                {busy && !streaming && <WorkingBubble label="Working…" />}
+                {busy && !streaming && <WorkingBubble label={status || 'Working…'} />}
                 {error && <div className="error-banner">⚠ {error}</div>}
               </div>
             </div>
@@ -386,6 +396,7 @@ function BuildTab() {
   const [convo, setConvo] = useState<BuildMsg[]>([]);
   const [streaming, setStreaming] = useState('');
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const acc = useRef('');
   const contentRef = useRef<HTMLDivElement>(null);
@@ -420,22 +431,27 @@ function BuildTab() {
     setBusy(true);
     setError(null);
     setStreaming('');
+    setStatus('');
     acc.current = '';
     streamBuild(
       { commander: commander.trim(), strategy, messages: nextConvo.slice(1) },
       {
+        onStatus: setStatus,
         onDelta: (t) => {
+          setStatus('');
           acc.current += t;
           setStreaming(acc.current);
         },
         onDone: () => {
           setConvo([...nextConvo, { role: 'assistant', content: acc.current }]);
           setStreaming('');
+          setStatus('');
           setBusy(false);
         },
         onError: (m) => {
           setError(m);
           setStreaming('');
+          setStatus('');
           setBusy(false);
         },
       },
@@ -515,7 +531,7 @@ function BuildTab() {
               ),
             )}
           {chosen && busy && !streaming && (
-            <WorkingBubble label="Searching Scryfall and assembling your build…" />
+            <WorkingBubble label={status || 'Searching Scryfall and assembling your build…'} />
           )}
           {streaming && (
             <div className="bubble bubble--assistant">

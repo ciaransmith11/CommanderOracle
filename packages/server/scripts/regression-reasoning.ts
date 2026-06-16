@@ -104,7 +104,10 @@ async function runCase(c: Case): Promise<boolean> {
     { role: 'user' as const, content: c.question },
   ];
   let full = '';
-  for await (const chunk of chatDeck(deck, history)) full += chunk;
+  for await (const ev of chatDeck(deck, history)) {
+    if (typeof ev === 'string') full += ev;
+    else if (ev.type === 'text') full += ev.text;
+  }
   const text = normalise(full);
 
   let allPass = true;

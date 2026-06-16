@@ -102,6 +102,21 @@ export interface ToolStreamOptions extends StreamOptions {
   maxTurns?: number;
 }
 
+/** A status update describes silent background work; text is final answer content. */
+export type ModelEvent = { type: 'status'; text: string } | { type: 'text'; text: string };
+
+/** A short human label for what a turn's tool calls are doing (shown live in the UI). */
+function describeToolBatch(blocks: Anthropic.Messages.ContentBlock[]): string {
+  const toolUses = blocks.filter((b): b is Anthropic.Messages.ToolUseBlock => b.type === 'tool_use');
+  const first = toolUses[0];
+  let label = 'Searching Scryfall';
+  if (first?.name === 'get_card') {
+    const name = (first.input as { name?: string } | null)?.name;
+    label = name ? `Checking ${name}` : 'Checking a card';
+  }
+  return toolUses.length > 1 ? `${label} (+${toolUses.length - 1} more)…` : `${label}…`;
+}
+
 /**
  * Stream one model turn, yielding text and returning the final message.
  * `tools` is passed per-turn so the final turn can omit them, forcing a text answer.
@@ -164,14 +179,15 @@ async function runTurnSilently(
  * finished result. This prevents narration leaking and prevents a stalled
  * intermediate turn from being mistaken for the answer.
  */
-export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<string> {
+export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<ModelEvent> {
   const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
   const maxToolTurns = opts.maxTurns ?? 4;
 
   let usedTools = false;
   let lastText = '';
 
-  // Gather phase — silent. Keep letting the model call tools until it stops.
+  // Gather phase — silent except for live status updates. Keep letting the model
+  // call tools until it stops.
   for (let turn = 0; turn < maxToolTurns; turn++) {
     const { text, message } = await runTurnSilently(messages, opts);
     lastText = text;
@@ -179,6 +195,8 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
 
     if (message.stop_reason !== 'tool_use') break;
     usedTools = true;
+
+    yield { type: 'status', text: describeToolBatch(message.content) };
 
     const toolResults: Anthropic.Messages.ContentBlockParam[] = [];
     for (const block of message.content) {
@@ -198,12 +216,13 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   // If the model answered directly without ever calling a tool, that text IS the
   // answer — emit it (no extra model call).
   if (!usedTools) {
-    if (lastText) yield lastText;
+    if (lastText) yield { type: 'text', text: lastText };
     return;
   }
 
   // Tools were used: force one clean final answer and stream it. Any narration
   // the model produced mid-gather is discarded.
+  yield { type: 'status', text: 'Writing it up…' };
   const nudge: Anthropic.Messages.TextBlockParam = {
     type: 'text',
     text: 'Stop searching now and write your complete final response as text, using everything gathered above. Do not mention searching or your process.',
@@ -214,7 +233,7 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   } else {
     messages.push({ role: 'user', content: [nudge] });
   }
-  yield* streamTurn(messages, opts, true);
+  for await (const chunk of streamTurn(messages, opts, true)) yield { type: 'text', text: chunk };
 }
 
 /**

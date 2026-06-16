@@ -1,6 +1,6 @@
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { SLOT_BASELINES, DESIGN_PHILOSOPHY } from '@commander-oracle/core';
-import { callModelJSON, streamModel, streamModelWithTools } from './anthropic.js';
+import { callModelJSON, streamModel, streamModelWithTools, type ModelEvent } from './anthropic.js';
 import { strategySystemBlocks, systemBlocks } from './prompt.js';
 import { CHAT_TOOLS, makeToolRunner } from './chat-tools.js';
 
@@ -119,7 +119,7 @@ export function analyseDeck(deck: CategorizedDeck): AsyncGenerator<string> {
 export function chatDeck(
   deck: CategorizedDeck,
   history: { role: 'user' | 'assistant'; content: string }[],
-): AsyncGenerator<string> {
+): AsyncGenerator<ModelEvent> {
   const context =
     `${renderDeckForModel(deck)}\n\n` +
     '(You have already given the user the initial three-section analysis. Answer their follow-up ' +
@@ -156,7 +156,7 @@ export function buildChat(
   commander: Card,
   strategy: string,
   history: { role: 'user' | 'assistant'; content: string }[],
-): AsyncGenerator<string> {
+): AsyncGenerator<ModelEvent> {
   const context = [
     'Help the player build a Commander deck around the chosen strategy, per your doctrine.',
     '\n# VERIFIED COMMANDER DATA (from live Scryfall)',

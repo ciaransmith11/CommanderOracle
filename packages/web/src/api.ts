@@ -92,6 +92,8 @@ export interface StreamHandlers {
   onDone: () => void;
   onError: (message: string) => void;
   onMeta?: (meta: RecommendMeta) => void;
+  /** Live status of silent background work (e.g. "Searching Scryfall…"). */
+  onStatus?: (text: string) => void;
   signal?: AbortSignal;
 }
 
@@ -154,6 +156,12 @@ function handleFrame(frame: string, h: StreamHandlers): void {
   } else if (event === 'meta') {
     try {
       h.onMeta?.(JSON.parse(raw) as RecommendMeta);
+    } catch {
+      /* ignore malformed frame */
+    }
+  } else if (event === 'status') {
+    try {
+      h.onStatus?.((JSON.parse(raw) as { text: string }).text);
     } catch {
       /* ignore malformed frame */
     }
