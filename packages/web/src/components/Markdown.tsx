@@ -13,27 +13,43 @@ const BASIC_NAMES = new Set([
   'Snow-Covered Mountain', 'Snow-Covered Forest', 'Snow-Covered Wastes',
 ]);
 
-// Fuzzy lookups are only used for card names NOT in the known deck list — e.g.
-// additions the model suggests in a follow-up. Cached across all analyses.
+// Card-name resolution for names NOT in a known deck list (Build/Recommend
+// results, follow-up additions). Resolved in BATCHES via the collection endpoint
+// — never one request per name, which would rate-limit on a card-heavy response.
+// Cached across the whole session.
 const resolved = new Map<string, Card | null>();
-const pending = new Map<string, Promise<Card | null>>();
-function lookupCard(name: string): Promise<Card | null> {
-  const key = name.toLowerCase();
-  if (resolved.has(key)) return Promise.resolve(resolved.get(key)!);
-  let p = pending.get(key);
-  if (!p) {
-    p = api
-      .lookupCard(name)
-      .then((r) => r.card)
-      .catch(() => null)
-      .then((card) => {
-        resolved.set(key, card);
-        pending.delete(key);
-        return card;
-      });
-    pending.set(key, p);
+const pendingKeys = new Set<string>();
+
+function normKey(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Batch-resolve names that aren't cached or in flight, then populate the cache. */
+async function resolveNames(names: string[]): Promise<void> {
+  const toFetch = new Map<string, string>(); // key -> a representative original name
+  for (const n of names) {
+    const k = normKey(n);
+    if (k && !resolved.has(k) && !pendingKeys.has(k) && !toFetch.has(k)) toFetch.set(k, n);
   }
-  return p;
+  if (toFetch.size === 0) return;
+  for (const k of toFetch.keys()) pendingKeys.add(k);
+  try {
+    const { cards } = await api.lookupCards([...toFetch.values()]);
+    const index = new Map<string, Card>();
+    for (const card of cards) {
+      index.set(normKey(card.name), card);
+      const front = card.name.split(' // ')[0];
+      if (front) {
+        const fk = normKey(front);
+        if (!index.has(fk)) index.set(fk, card);
+      }
+    }
+    for (const k of toFetch.keys()) resolved.set(k, index.get(k) ?? null);
+  } catch {
+    for (const k of toFetch.keys()) resolved.set(k, null);
+  } finally {
+    for (const k of toFetch.keys()) pendingKeys.delete(k);
+  }
 }
 
 function cleanName(raw: string): string {
@@ -114,12 +130,15 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
       }
     }
 
-    // 2. Fallback: bolded names not already marked (e.g. suggested additions).
+    // 2. Fallback: bolded names not already marked (Build/Recommend results,
+    //    suggested additions). Collect the unresolved ones and resolve them in a
+    //    single batch; mark the rest from cache.
+    const unresolved: string[] = [];
     el.querySelectorAll('strong').forEach((strong) => {
       if (strong.querySelector('.cardref') || strong.classList.contains('cardref')) return;
       const name = cleanName(strong.textContent ?? '');
       if (!name || BASIC_NAMES.has(name)) return;
-      const key = name.toLowerCase();
+      const key = normKey(name);
       if (resolved.has(key)) {
         const card = resolved.get(key);
         if (card?.imageUrl) {
@@ -127,9 +146,10 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
           (strong as HTMLElement).dataset.img = card.imageUrl;
         }
       } else {
-        void lookupCard(name).then(() => setTick((t) => t + 1));
+        unresolved.push(name);
       }
     });
+    if (unresolved.length > 0) void resolveNames(unresolved).then(() => setTick((t) => t + 1));
   }, [html, tick, knownRe, known]);
 
   // Hover preview, delegated; reads the image from whichever element carries it.

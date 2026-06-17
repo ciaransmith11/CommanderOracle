@@ -30,6 +30,15 @@ app.get('/api/card', async (c) => {
   return c.json({ card });
 });
 
+// Batch-resolve many card names in one go (collection endpoint, ≤75/request).
+// Used by the UI to link every card name in a response without a request burst.
+app.post('/api/cards', async (c) => {
+  const { names } = await c.req.json<{ names?: string[] }>();
+  if (!Array.isArray(names) || names.length === 0) return c.json({ cards: [] });
+  const { cards } = await fetchCollection(names.slice(0, 150));
+  return c.json({ cards });
+});
+
 // --- Phase 1: deterministic echo (no model) -------------------------------
 
 /**

@@ -32,6 +32,14 @@ export const api = {
   lookupCard: (name: string) =>
     fetch(`/api/card?name=${encodeURIComponent(name)}`).then(json<{ card: Card }>),
 
+  /** Batch-resolve card names (one request, collection endpoint server-side). */
+  lookupCards: (names: string[]) =>
+    fetch('/api/cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names }),
+    }).then(json<{ cards: Card[] }>),
+
   buildStrategies: (commander: string) =>
     fetch('/api/build/strategies', {
       method: 'POST',
