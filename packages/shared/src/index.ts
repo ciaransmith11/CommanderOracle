@@ -20,10 +20,16 @@ export interface ParsedDecklist {
   commanders: string[];
 }
 
+/** One face of a double-faced / split card, with its own image. */
+export interface CardFace {
+  name: string;
+  imageUrl: string | null;
+}
+
 /**
  * Normalized card data. Sourced exclusively from Scryfall — never from model
- * recall. Double-faced fields are already flattened to a representative face
- * by the Scryfall normalizer (see §5 of the handoff).
+ * recall. Double-faced fields are flattened to a representative face by the
+ * Scryfall normalizer (see §5 of the handoff), with per-face data in `faces`.
  */
 export interface Card {
   name: string;
@@ -39,6 +45,8 @@ export interface Card {
   priceUsd: number | null;
   imageUrl: string | null;
   scryfallUri: string | null;
+  /** Present for double-faced / split cards (2+ named faces), each with its image. */
+  faces?: CardFace[];
 }
 
 /** The card-type sections used in the categorised echo, in display order. */

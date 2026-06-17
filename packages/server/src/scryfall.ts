@@ -26,6 +26,7 @@ const REQUEST_HEADERS: Record<string, string> = {
 // --- Raw Scryfall shapes (only the fields we consume) ---------------------
 
 interface ScryfallCardFace {
+  name?: string;
   type_line?: string;
   oracle_text?: string;
   mana_cost?: string;
@@ -93,6 +94,14 @@ export function normalizeCard(c: ScryfallCard): Card {
 
   const imageUrl = c.image_uris?.normal ?? front?.image_uris?.normal ?? null;
 
+  // Per-face data for double-faced / split cards (2+ named faces), so each face
+  // name can be hovered to show that face.
+  const namedFaces = (c.card_faces ?? []).filter((f): f is ScryfallCardFace & { name: string } => !!f.name);
+  const faces =
+    namedFaces.length >= 2
+      ? namedFaces.map((f) => ({ name: f.name, imageUrl: f.image_uris?.normal ?? null }))
+      : undefined;
+
   return {
     name: c.name,
     typeLine,
@@ -105,6 +114,7 @@ export function normalizeCard(c: ScryfallCard): Card {
     priceUsd: parsePrice(c.prices?.usd) ?? parsePrice(c.prices?.usd_foil),
     imageUrl,
     scryfallUri: c.scryfall_uri ?? null,
+    faces,
   };
 }
 

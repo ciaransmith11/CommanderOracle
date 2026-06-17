@@ -13,43 +13,8 @@ const BASIC_NAMES = new Set([
   'Snow-Covered Mountain', 'Snow-Covered Forest', 'Snow-Covered Wastes',
 ]);
 
-// Card-name resolution for names NOT in a known deck list (Build/Recommend
-// results, follow-up additions). Resolved in BATCHES via the collection endpoint
-// — never one request per name, which would rate-limit on a card-heavy response.
-// Cached across the whole session.
-const resolved = new Map<string, Card | null>();
-const pendingKeys = new Set<string>();
-
 function normKey(s: string): string {
   return s.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-/** Batch-resolve names that aren't cached or in flight, then populate the cache. */
-async function resolveNames(names: string[]): Promise<void> {
-  const toFetch = new Map<string, string>(); // key -> a representative original name
-  for (const n of names) {
-    const k = normKey(n);
-    if (k && !resolved.has(k) && !pendingKeys.has(k) && !toFetch.has(k)) toFetch.set(k, n);
-  }
-  if (toFetch.size === 0) return;
-  for (const k of toFetch.keys()) pendingKeys.add(k);
-  try {
-    const { cards } = await api.lookupCards([...toFetch.values()]);
-    const index = new Map<string, Card>();
-    for (const card of cards) {
-      index.set(normKey(card.name), card);
-      const front = card.name.split(' // ')[0];
-      if (front) {
-        const fk = normKey(front);
-        if (!index.has(fk)) index.set(fk, card);
-      }
-    }
-    for (const k of toFetch.keys()) resolved.set(k, index.get(k) ?? null);
-  } catch {
-    for (const k of toFetch.keys()) resolved.set(k, null);
-  } finally {
-    for (const k of toFetch.keys()) pendingKeys.delete(k);
-  }
 }
 
 function cleanName(raw: string): string {
@@ -60,7 +25,64 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** True if the node sits somewhere we should not touch (already a card, code, or a link). */
+/**
+ * Index a card into a name→image map: by full name, by front-face name, and by
+ * EACH face name (mapped to that face's image), so a double-faced card can be
+ * hovered by either face name to show that face.
+ */
+function indexCard(map: Map<string, string | null>, card: Card): void {
+  map.set(normKey(card.name), card.imageUrl);
+  const front = card.name.split(' // ')[0];
+  if (front) {
+    const k = normKey(front);
+    if (!map.has(k)) map.set(k, card.imageUrl);
+  }
+  for (const face of card.faces ?? []) {
+    map.set(normKey(face.name), face.imageUrl ?? card.imageUrl);
+  }
+}
+
+// Session-wide cache of name→image for names NOT in a known deck list
+// (Build/Recommend results, follow-up additions).
+const resolved = new Map<string, string | null>();
+const pendingKeys = new Set<string>();
+
+/**
+ * Resolve names in a single BATCH via the collection endpoint, then fall back to
+ * a fuzzy lookup for the few stragglers the collection couldn't match exactly
+ * (odd spellings, accents, back-face names). Populates `resolved`.
+ */
+async function resolveNames(names: string[]): Promise<void> {
+  const want = new Map<string, string>(); // key -> representative original name
+  for (const n of names) {
+    const k = normKey(n);
+    if (k && !resolved.has(k) && !pendingKeys.has(k) && !want.has(k)) want.set(k, n);
+  }
+  if (want.size === 0) return;
+  for (const k of want.keys()) pendingKeys.add(k);
+
+  try {
+    const { cards } = await api.lookupCards([...want.values()]);
+    for (const card of cards) indexCard(resolved, card);
+
+    // Fuzzy fallback for the stragglers, one at a time (few, so no burst).
+    for (const [k, name] of want) {
+      if (resolved.has(k)) continue;
+      const card = await api.lookupCard(name).then((r) => r.card).catch(() => null);
+      if (card) {
+        indexCard(resolved, card);
+        if (!resolved.has(k)) resolved.set(k, card.imageUrl);
+      } else {
+        resolved.set(k, null);
+      }
+    }
+  } catch {
+    for (const k of want.keys()) if (!resolved.has(k)) resolved.set(k, null);
+  } finally {
+    for (const k of want.keys()) pendingKeys.delete(k);
+  }
+}
+
 function inSkippable(node: Node): boolean {
   const p = node.parentElement;
   return !p || !!p.closest('.cardref, code, a');
@@ -69,10 +91,10 @@ function inSkippable(node: Node): boolean {
 /**
  * Renders analysis markdown and makes card names visually distinct + hoverable.
  *
- * Primary path: when `cards` (the known deck) is supplied, every occurrence of a
- * known card name is wrapped — reliably, with no network calls, bolded or not.
- * Fallback path: any remaining **bold** token is fuzzy-looked-up so cards that
- * aren't in the deck (e.g. suggested additions) still resolve.
+ * Known-deck fast path: when `cards` is supplied, every occurrence of a known
+ * card name (or face name) is wrapped instantly, no network. Fallback: bolded
+ * names not in the deck are batch-resolved (with a fuzzy pass for stragglers).
+ * Double-faced cards index each face name to that face's image.
  */
 export function Markdown({ text, streaming, cards }: { text: string; streaming?: boolean; cards?: Card[] }) {
   const html = useMemo(() => marked.parse(text) as string, [text]);
@@ -81,27 +103,39 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
   const pos = useRef({ x: 0, y: 0 });
   const [tick, setTick] = useState(0);
 
-  const known = useMemo(() => {
-    const map = new Map<string, Card>();
-    for (const c of cards ?? []) if (!BASIC_NAMES.has(c.name)) map.set(c.name.toLowerCase(), c);
-    return map;
+  // Known deck names (full + front + face) → image, plus the original-case names
+  // for the matching regex.
+  const { knownImg, knownNames } = useMemo(() => {
+    const img = new Map<string, string | null>();
+    const names: string[] = [];
+    const add = (nm: string, image: string | null) => {
+      const k = normKey(nm);
+      if (k && !img.has(k)) {
+        img.set(k, image);
+        names.push(nm);
+      }
+    };
+    for (const c of cards ?? []) {
+      if (BASIC_NAMES.has(c.name)) continue;
+      add(c.name, c.imageUrl);
+      const front = c.name.split(' // ')[0];
+      if (front && front !== c.name) add(front, c.imageUrl);
+      for (const f of c.faces ?? []) add(f.name, f.imageUrl ?? c.imageUrl);
+    }
+    return { knownImg: img, knownNames: names };
   }, [cards]);
 
   const knownRe = useMemo(() => {
-    if (known.size === 0) return null;
-    const names = [...known.values()]
-      .map((c) => c.name)
-      .sort((a, b) => b.length - a.length) // longest first so "Lightning Bolt" beats "Bolt"
-      .map(escapeRe);
-    return new RegExp(`(?<![A-Za-z0-9])(?:${names.join('|')})(?![A-Za-z0-9])`, 'g');
-  }, [known]);
+    if (knownNames.length === 0) return null;
+    const alt = [...knownNames].sort((a, b) => b.length - a.length).map(escapeRe);
+    return new RegExp(`(?<![A-Za-z0-9])(?:${alt.join('|')})(?![A-Za-z0-9])`, 'g');
+  }, [knownNames]);
 
-  // Marking pass — re-runs as content streams in and as fuzzy lookups settle.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
-    // 1. Wrap every occurrence of a known deck card.
+    // 1. Wrap every occurrence of a known deck card / face name.
     if (knownRe) {
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       const targets: Text[] = [];
@@ -117,11 +151,11 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
         let m: RegExpExecArray | null;
         while ((m = knownRe.exec(text)) !== null) {
           if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
-          const card = known.get(m[0].toLowerCase());
+          const image = knownImg.get(normKey(m[0]));
           const span = document.createElement('span');
           span.className = 'cardref';
           span.textContent = m[0];
-          if (card?.imageUrl) span.dataset.img = card.imageUrl;
+          if (image) span.dataset.img = image;
           frag.appendChild(span);
           last = m.index + m[0].length;
         }
@@ -130,27 +164,24 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
       }
     }
 
-    // 2. Fallback: bolded names not already marked (Build/Recommend results,
-    //    suggested additions). Collect the unresolved ones and resolve them in a
-    //    single batch; mark the rest from cache.
+    // 2. Fallback: bolded names not already marked, resolved in one batch.
     const unresolved: string[] = [];
     el.querySelectorAll('strong').forEach((strong) => {
       if (strong.querySelector('.cardref') || strong.classList.contains('cardref')) return;
       const name = cleanName(strong.textContent ?? '');
       if (!name || BASIC_NAMES.has(name)) return;
-      const key = normKey(name);
-      if (resolved.has(key)) {
-        const card = resolved.get(key);
-        if (card?.imageUrl) {
+      const image = resolved.get(normKey(name));
+      if (image !== undefined) {
+        if (image) {
           strong.classList.add('cardref');
-          (strong as HTMLElement).dataset.img = card.imageUrl;
+          (strong as HTMLElement).dataset.img = image;
         }
       } else {
         unresolved.push(name);
       }
     });
     if (unresolved.length > 0) void resolveNames(unresolved).then(() => setTick((t) => t + 1));
-  }, [html, tick, knownRe, known]);
+  }, [html, tick, knownRe, knownImg]);
 
   // Hover preview, delegated; reads the image from whichever element carries it.
   useEffect(() => {
