@@ -9,7 +9,7 @@ import type { ModelEvent } from './anthropic.js';
 import { fetchCollection, namedCard, resolveEntries } from './scryfall.js';
 import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
-import { messages, sessions } from './db.js';
+import { sessions } from './db.js';
 
 const app = new Hono();
 app.use('/api/*', cors());
@@ -189,24 +189,19 @@ app.post('/api/sessions', async (c) => {
 app.get('/api/sessions/:id', (c) => {
   const session = sessions.get(c.req.param('id'));
   if (!session) return c.json({ error: 'not found' }, 404);
-  return c.json({ session, messages: messages.list(session.id) });
+  return c.json({ session });
 });
 
 app.patch('/api/sessions/:id', async (c) => {
-  const { title } = await c.req.json<{ title?: string }>();
-  if (title) sessions.rename(c.req.param('id'), title);
+  const { title, state } = await c.req.json<{ title?: string; state?: string }>();
+  if (state != null) sessions.save(c.req.param('id'), title ?? 'Untitled', state);
+  else if (title) sessions.rename(c.req.param('id'), title);
   return c.json({ ok: true });
 });
 
 app.delete('/api/sessions/:id', (c) => {
   sessions.remove(c.req.param('id'));
   return c.json({ ok: true });
-});
-
-app.post('/api/sessions/:id/messages', async (c) => {
-  const { role, content } = await c.req.json<{ role?: string; content?: string }>();
-  if (!role || content == null) return c.json({ error: 'missing role/content' }, 400);
-  return c.json({ message: messages.add(c.req.param('id'), role, content) });
 });
 
 // --- Start ----------------------------------------------------------------

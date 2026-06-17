@@ -18,198 +18,223 @@ import { Markdown } from './components/Markdown.js';
 
 type Tab = 'analyse' | 'build' | 'recommend';
 
-type Item =
-  | { role: 'user'; content: string }
-  | { role: 'deck'; deck: CategorizedDeck }
-  | { role: 'assistant'; content: string };
-
 const TABS: { id: Tab; label: string }[] = [
   { id: 'analyse', label: 'Analyse' },
   { id: 'build', label: 'Build' },
   { id: 'recommend', label: 'Recommend' },
 ];
 
+/** Persist a tab's full state under a session; creates one on first save. Returns the id. */
+type Persist = (mode: Tab, title: string, state: unknown, existingId: string | null) => Promise<string>;
+
+interface TabProps {
+  initial: unknown | null;
+  sessionId: string | null;
+  persist: Persist;
+}
+
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [tab, setTab] = useState<Tab>('analyse');
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
-  const [activeSession, setActiveSession] = useState<string | null>(null);
-
-  const [items, setItems] = useState<Item[]>([]);
-  const [streaming, setStreaming] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const streamRef = useRef('');
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [selected, setSelected] = useState<{ id: string; mode: string; state: unknown } | null>(null);
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => setHealth(null));
     refreshSessions();
   }, []);
 
-  useEffect(() => {
-    contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
-  }, [items, streaming]);
-
   function refreshSessions() {
     api.listSessions().then((r) => setSessions(r.sessions)).catch(() => {});
   }
 
-  function resetThread() {
-    setItems([]);
-    setStreaming('');
-    setError(null);
-    setActiveSession(null);
-  }
-
-  function switchTab(next: Tab) {
-    if (next === tab) return;
-    setTab(next);
-    resetThread();
-  }
+  const persist: Persist = async (mode, title, state, existingId) => {
+    let id = existingId;
+    if (!id) {
+      const { session } = await api.createSession(mode, title);
+      id = session.id;
+    }
+    await api.saveSession(id, title, JSON.stringify(state));
+    refreshSessions();
+    return id;
+  };
 
   async function openSession(id: string) {
-    setError(null);
-    const { session, messages } = await api.getSession(id);
-    setTab(session.mode === 'build' ? 'build' : 'analyse');
-    setActiveSession(id);
-    setStreaming('');
-    setItems(
-      messages.map((m): Item => {
-        if (m.role === 'deck') return { role: 'deck', deck: JSON.parse(m.content) as CategorizedDeck };
-        if (m.role === 'assistant') return { role: 'assistant', content: m.content };
-        return { role: 'user', content: m.content };
-      }),
-    );
+    const { session } = await api.getSession(id);
+    const state = session.state ? JSON.parse(session.state) : null;
+    setTab(session.mode as Tab);
+    setSelected({ id, mode: session.mode, state });
+  }
+
+  function newSession() {
+    setSelected(null);
+    setNonce((n) => n + 1);
   }
 
   async function deleteSession(id: string) {
     await api.deleteSession(id);
-    if (id === activeSession) resetThread();
+    if (selected?.id === id) newSession();
     refreshSessions();
   }
 
-  /** Stream a model response into the thread, persisting to a session. */
-  function runStream(
-    sessionMode: Tab,
-    title: string,
-    userItem: Item,
-    deckItem: Item | null,
-    start: (h: {
-      onStatus: (text: string) => void;
-      onDelta: (t: string) => void;
-      onDone: () => void;
-      onError: (m: string) => void;
-    }) => void,
-  ) {
-    setBusy(true);
-    setError(null);
-    streamRef.current = '';
+  // The active tab is remounted (via key) whenever a session is opened or "New"
+  // is pressed, so it initialises cleanly from the selected session's state.
+  const matched = selected && selected.mode === tab ? selected : null;
+  const key = `${tab}:${matched ? matched.id : `new-${nonce}`}`;
+  const tabProps: TabProps = { initial: matched?.state ?? null, sessionId: matched?.id ?? null, persist };
 
-    const newItems: Item[] = deckItem ? [userItem, deckItem] : [userItem];
-    setItems((prev) => [...prev, ...newItems]);
+  return (
+    <div className="app">
+      <Header model={health?.model} hasApiKey={health?.hasApiKey} />
+      <Sidebar
+        sessions={sessions}
+        activeId={selected?.id ?? null}
+        onSelect={openSession}
+        onNew={newSession}
+        onDelete={deleteSession}
+      />
+      <main className="main">
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              className={`tab${tab === t.id ? ' tab--active' : ''}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
 
-    (async () => {
-      // Ensure a session exists, then persist the input messages.
-      let sid = activeSession;
-      if (!sid) {
-        const { session } = await api.createSession(sessionMode, title);
-        sid = session.id;
-        setActiveSession(sid);
-        refreshSessions();
-      }
-      await api.addMessage(sid, userItem.role, userItem.role === 'user' ? userItem.content : '');
-      if (deckItem && deckItem.role === 'deck') {
-        await api.addMessage(sid, 'deck', JSON.stringify(deckItem.deck));
-      }
+        {tab === 'analyse' && <AnalyseTab key={key} {...tabProps} />}
+        {tab === 'build' && <BuildTab key={key} {...tabProps} />}
+        {tab === 'recommend' && <RecommendTab key={key} {...tabProps} />}
+      </main>
+    </div>
+  );
+}
 
-      start({
-        onStatus: setStatus,
-        onDelta: (t) => {
-          setStatus('');
-          streamRef.current += t;
-          setStreaming(streamRef.current);
-        },
-        onDone: () => {
-          const full = streamRef.current;
-          setItems((prev) => [...prev, { role: 'assistant', content: full }]);
-          setStreaming('');
-          setStatus('');
-          setBusy(false);
-          if (sid) void api.addMessage(sid, 'assistant', full);
-        },
-        onError: (m) => {
-          setError(m);
-          setStreaming('');
-          setStatus('');
-          setBusy(false);
-        },
-      });
-    })().catch((e) => {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
+// --- Shared bits ----------------------------------------------------------
+
+type Item =
+  | { role: 'user'; content: string }
+  | { role: 'deck'; deck: CategorizedDeck }
+  | { role: 'assistant'; content: string };
+
+function WorkingBubble({ label }: { label: string }) {
+  return (
+    <div className="bubble bubble--assistant working">
+      <span>{label}</span>
+      <span className="cursor" />
+    </div>
+  );
+}
+
+function ChatComposer({
+  busy,
+  placeholder,
+  onSubmit,
+}: {
+  busy: boolean;
+  placeholder: string;
+  onSubmit: (text: string) => void;
+}) {
+  const [text, setText] = useState('');
+  function send() {
+    if (text.trim() && !busy) {
+      onSubmit(text.trim());
+      setText('');
+    }
+  }
+  return (
+    <div className="composer">
+      <div className="composer__inner">
+        <textarea
+          placeholder={placeholder}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          rows={2}
+        />
+        <button className="btn-send" disabled={busy || !text.trim()} onClick={send}>
+          {busy ? '…' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Analyse --------------------------------------------------------------
+
+interface AnalyseState {
+  items: Item[];
+}
+
+function AnalyseTab({ initial, sessionId, persist }: TabProps) {
+  const init = (initial as AnalyseState | null) ?? null;
+  const [items, setItems] = useState<Item[]>(init?.items ?? []);
+  const [streaming, setStreaming] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const acc = useRef('');
+  const sid = useRef<string | null>(sessionId);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
+  }, [items, streaming, status]);
+
+  const deckItem = items.find((i) => i.role === 'deck');
+  const deckCards =
+    deckItem && deckItem.role === 'deck'
+      ? [...deckItem.deck.commander, ...deckItem.deck.sections.flatMap((s) => s.cards.map((c) => c.card))]
+      : [];
+
+  function save(next: Item[]) {
+    const d = next.find((i) => i.role === 'deck');
+    const title = (d && d.role === 'deck' && d.deck.commander[0]?.name) || 'Deck analysis';
+    void persist('analyse', title, { items: next } satisfies AnalyseState, sid.current).then((id) => {
+      sid.current = id;
     });
   }
 
-  // --- Analyse: phase 1 echo (deterministic), then phase 2 stream ---
-  async function handleAnalyse(text: string, commander: string) {
+  async function analyse(text: string, commander: string) {
     setBusy(true);
     setError(null);
+    setStatus('');
+    let deck: CategorizedDeck;
     try {
-      const { deck } = await api.echo(text, commander.trim() || undefined);
-      const title =
-        deck.commander[0]?.name || commander.trim() || text.split('\n')[0]?.slice(0, 40) || 'Deck analysis';
-      const content = commander.trim() ? `Commander: ${commander.trim()}\n\n${text}` : text;
-      runStream('analyse', title, { role: 'user', content }, { role: 'deck', deck }, (h) =>
-        streamAnalyse(deck, h),
-      );
+      ({ deck } = await api.echo(text, commander.trim() || undefined));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
+      return;
     }
-  }
-
-  // Follow-up chat after the initial analysis: re-send the verified deck plus
-  // the conversation so far, stream the reply, and persist both turns.
-  function handleFollowup(text: string) {
-    const deckItem = items.find((i) => i.role === 'deck');
-    if (!deckItem || deckItem.role !== 'deck') return;
-
-    setBusy(true);
-    setError(null);
-    streamRef.current = '';
-
-    const base: Item[] = [...items, { role: 'user', content: text }];
+    const content = commander.trim() ? `Commander: ${commander.trim()}\n\n${text}` : text;
+    const base: Item[] = [...items, { role: 'user', content }, { role: 'deck', deck }];
     setItems(base);
-
-    const deckIdx = base.findIndex((i) => i.role === 'deck');
-    const history = base
-      .slice(deckIdx + 1)
-      .filter((i) => i.role !== 'deck')
-      .map((i) => ({
-        role: i.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-        content: 'content' in i ? i.content : '',
-      }));
-
-    const sid = activeSession;
-    if (sid) void api.addMessage(sid, 'user', text);
-
-    streamChat(deckItem.deck, history, {
+    acc.current = '';
+    streamAnalyse(deck, {
       onStatus: setStatus,
       onDelta: (t) => {
         setStatus('');
-        streamRef.current += t;
-        setStreaming(streamRef.current);
+        acc.current += t;
+        setStreaming(acc.current);
       },
       onDone: () => {
-        const full = streamRef.current;
-        setItems((prev) => [...prev, { role: 'assistant', content: full }]);
+        const next: Item[] = [...base, { role: 'assistant', content: acc.current }];
+        setItems(next);
         setStreaming('');
         setStatus('');
         setBusy(false);
-        if (sid) void api.addMessage(sid, 'assistant', full);
+        save(next);
       },
       onError: (m) => {
         setError(m);
@@ -220,95 +245,94 @@ export function App() {
     });
   }
 
-  // Every card in the active deck (commander + all sections), with image data —
-  // used to reliably highlight card names in the analysis without lookups.
-  const deckItemForCards = items.find((i) => i.role === 'deck');
-  const deckCards =
-    deckItemForCards && deckItemForCards.role === 'deck'
-      ? [
-          ...deckItemForCards.deck.commander,
-          ...deckItemForCards.deck.sections.flatMap((s) => s.cards.map((c) => c.card)),
-        ]
-      : [];
+  function followUp(text: string) {
+    if (!deckItem || deckItem.role !== 'deck') return;
+    setBusy(true);
+    setError(null);
+    setStatus('');
+    const base: Item[] = [...items, { role: 'user', content: text }];
+    setItems(base);
+    const deckIdx = base.findIndex((i) => i.role === 'deck');
+    const history = base
+      .slice(deckIdx + 1)
+      .filter((i) => i.role !== 'deck')
+      .map((i) => ({
+        role: i.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+        content: 'content' in i ? i.content : '',
+      }));
+    acc.current = '';
+    streamChat(deckItem.deck, history, {
+      onStatus: setStatus,
+      onDelta: (t) => {
+        setStatus('');
+        acc.current += t;
+        setStreaming(acc.current);
+      },
+      onDone: () => {
+        const next: Item[] = [...base, { role: 'assistant', content: acc.current }];
+        setItems(next);
+        setStreaming('');
+        setStatus('');
+        setBusy(false);
+        save(next);
+      },
+      onError: (m) => {
+        setError(m);
+        setStreaming('');
+        setStatus('');
+        setBusy(false);
+      },
+    });
+  }
+
+  const hasAnalysis = items.some((i) => i.role === 'assistant');
 
   return (
-    <div className="app">
-      <Header model={health?.model} hasApiKey={health?.hasApiKey} />
-      <Sidebar
-        sessions={sessions}
-        activeId={activeSession}
-        onSelect={openSession}
-        onNew={resetThread}
-        onDelete={deleteSession}
-      />
-      <main className="main">
-        <nav className="tabs">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              className={`tab${tab === t.id ? ' tab--active' : ''}`}
-              onClick={() => switchTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-
-        {tab === 'recommend' ? (
-          <RecommendTab />
-        ) : tab === 'build' ? (
-          <BuildTab />
-        ) : (
-          <>
-            <div className="content" ref={contentRef}>
-              <div className="thread">
-                {items.length === 0 && !streaming && (
-                  <div className="placeholder">
-                    <h2>Analyse a deck</h2>
-                    <p>Add your commander and 99-card decklist below.</p>
-                  </div>
-                )}
-                {items.map((item, i) =>
-                  item.role === 'deck' ? (
-                    <DeckEcho key={i} deck={item.deck} />
-                  ) : item.role === 'assistant' ? (
-                    <div className="bubble bubble--assistant" key={i}>
-                      <Markdown text={item.content} cards={deckCards} />
-                    </div>
-                  ) : (
-                    <div className="bubble bubble--user" key={i}>
-                      {item.content}
-                    </div>
-                  ),
-                )}
-                {streaming && (
-                  <div className="bubble bubble--assistant">
-                    <Markdown text={streaming} streaming cards={deckCards} />
-                  </div>
-                )}
-                {busy && !streaming && <WorkingBubble label={status || 'Working…'} />}
-                {error && <div className="error-banner">⚠ {error}</div>}
-              </div>
+    <>
+      <div className="content" ref={contentRef}>
+        <div className="thread">
+          {items.length === 0 && !streaming && (
+            <div className="placeholder">
+              <h2>Analyse a deck</h2>
+              <p>Add your commander and 99-card decklist below.</p>
             </div>
-            {items.some((i) => i.role === 'assistant') ? (
-              <ChatComposer busy={busy} onSubmit={handleFollowup} />
+          )}
+          {items.map((item, i) =>
+            item.role === 'deck' ? (
+              <DeckEcho key={i} deck={item.deck} />
+            ) : item.role === 'assistant' ? (
+              <div className="bubble bubble--assistant" key={i}>
+                <Markdown text={item.content} cards={deckCards} />
+              </div>
             ) : (
-              <AnalyseComposer busy={busy} onSubmit={handleAnalyse} />
-            )}
-          </>
-        )}
-      </main>
-    </div>
+              <div className="bubble bubble--user" key={i}>
+                {item.content}
+              </div>
+            ),
+          )}
+          {streaming && (
+            <div className="bubble bubble--assistant">
+              <Markdown text={streaming} streaming cards={deckCards} />
+            </div>
+          )}
+          {busy && !streaming && <WorkingBubble label={status || 'Working…'} />}
+          {error && <div className="error-banner">⚠ {error}</div>}
+        </div>
+      </div>
+      {hasAnalysis ? (
+        <ChatComposer
+          busy={busy}
+          placeholder="Ask a follow-up — e.g. “suggest cuts”, “show the mana curve”, “my biggest imbalances?”"
+          onSubmit={followUp}
+        />
+      ) : (
+        <AnalyseComposer busy={busy} onSubmit={analyse} />
+      )}
+    </>
   );
 }
 
-function AnalyseComposer({
-  busy,
-  onSubmit,
-}: {
-  busy: boolean;
-  onSubmit: (text: string, commander: string) => void;
-}) {
+function AnalyseComposer({ busy, onSubmit }: { busy: boolean; onSubmit: (text: string, commander: string) => void }) {
   const [text, setText] = useState('');
   const [commander, setCommander] = useState('');
   return (
@@ -337,73 +361,56 @@ function AnalyseComposer({
         </button>
       </div>
       <div className="composer__hint">
-        Counts and categories are computed deterministically from live Scryfall data — the model does
-        judgment only.
+        Counts and categories are computed deterministically from live Scryfall data — the model does judgment only.
       </div>
     </div>
   );
 }
 
-function WorkingBubble({ label }: { label: string }) {
-  return (
-    <div className="bubble bubble--assistant working">
-      <span>{label}</span>
-      <span className="cursor" />
-    </div>
-  );
-}
-
-function ChatComposer({ busy, onSubmit }: { busy: boolean; onSubmit: (text: string) => void }) {
-  const [text, setText] = useState('');
-  function send() {
-    if (text.trim() && !busy) {
-      onSubmit(text.trim());
-      setText('');
-    }
-  }
-  return (
-    <div className="composer">
-      <div className="composer__inner">
-        <textarea
-          placeholder="Ask a follow-up — e.g. “suggest cuts”, “show the mana curve”, “what are my biggest imbalances?”"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          rows={2}
-        />
-        <button className="btn-send" disabled={busy || !text.trim()} onClick={send}>
-          {busy ? '…' : 'Send'}
-        </button>
-      </div>
-      <div className="composer__hint">Ask anything about this deck — cuts, additions, imbalances, the curve.</div>
-    </div>
-  );
-}
+// --- Build ----------------------------------------------------------------
 
 type BuildMsg = { role: 'user' | 'assistant'; content: string };
 
-function BuildTab() {
-  const [commander, setCommander] = useState('');
-  const [commanderCard, setCommanderCard] = useState<Card | null>(null);
-  const [strategies, setStrategies] = useState<BuildStrategy[] | null>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
+interface BuildState {
+  commander: string;
+  commanderCard: Card | null;
+  strategies: BuildStrategy[] | null;
+  chosen: string | null;
+  convo: BuildMsg[];
+}
+
+function BuildTab({ initial, sessionId, persist }: TabProps) {
+  const init = (initial as BuildState | null) ?? null;
+  const [commander, setCommander] = useState(init?.commander ?? '');
+  const [commanderCard, setCommanderCard] = useState<Card | null>(init?.commanderCard ?? null);
+  const [strategies, setStrategies] = useState<BuildStrategy[] | null>(init?.strategies ?? null);
+  const [chosen, setChosen] = useState<string | null>(init?.chosen ?? null);
   const [custom, setCustom] = useState('');
-  const [convo, setConvo] = useState<BuildMsg[]>([]);
+  const [convo, setConvo] = useState<BuildMsg[]>(init?.convo ?? []);
   const [streaming, setStreaming] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
   const acc = useRef('');
+  const sid = useRef<string | null>(sessionId);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
-  }, [convo, streaming, strategies]);
+  }, [convo, streaming, strategies, status]);
+
+  function save(nextConvo: BuildMsg[], nextChosen: string | null, card = commanderCard, strats = strategies) {
+    const state: BuildState = {
+      commander,
+      commanderCard: card,
+      strategies: strats,
+      chosen: nextChosen,
+      convo: nextConvo,
+    };
+    void persist('build', commander || 'Build', state, sid.current).then((id) => {
+      sid.current = id;
+    });
+  }
 
   async function explore() {
     if (!commander.trim() || busy) return;
@@ -424,9 +431,6 @@ function BuildTab() {
     }
   }
 
-  // Stream one build turn. `nextConvo` includes the new user message; the first
-  // display message ("Build around: …") is local only — the backend already has
-  // the strategy as context, so we send everything after it.
   function runTurn(strategy: string, nextConvo: BuildMsg[]) {
     setBusy(true);
     setError(null);
@@ -443,10 +447,12 @@ function BuildTab() {
           setStreaming(acc.current);
         },
         onDone: () => {
-          setConvo([...nextConvo, { role: 'assistant', content: acc.current }]);
+          const done = [...nextConvo, { role: 'assistant' as const, content: acc.current }];
+          setConvo(done);
           setStreaming('');
           setStatus('');
           setBusy(false);
+          save(done, strategy);
         },
         onError: (m) => {
           setError(m);
@@ -494,11 +500,7 @@ function BuildTab() {
               </div>
               <p style={{ marginTop: 0, color: 'var(--inkMid)' }}>Choose a direction to build around:</p>
               {strategies.map((s) => (
-                <button
-                  key={s.name}
-                  className="strategy-card"
-                  onClick={() => choose(`${s.name}: ${s.description}`)}
-                >
+                <button key={s.name} className="strategy-card" onClick={() => choose(`${s.name}: ${s.description}`)}>
                   <strong>{s.name}</strong>
                   <span>{s.description}</span>
                 </button>
@@ -549,7 +551,11 @@ function BuildTab() {
       </div>
 
       {chosen ? (
-        <ChatComposer busy={busy} onSubmit={followUp} />
+        <ChatComposer
+          busy={busy}
+          placeholder="Ask a follow-up — e.g. “budget swaps”, “make it faster”, “explain the combo”"
+          onSubmit={followUp}
+        />
       ) : (
         <div className="composer">
           <div className="composer__inner">
@@ -573,38 +579,72 @@ function BuildTab() {
   );
 }
 
-function RecommendTab() {
-  const [commander, setCommander] = useState('');
-  const [strategy, setStrategy] = useState('');
+// --- Recommend ------------------------------------------------------------
+
+interface RecommendState {
+  commander: string;
+  strategy: string;
+  meta: RecommendMeta | null;
+  text: string;
+}
+
+function RecommendTab({ initial, sessionId, persist }: TabProps) {
+  const init = (initial as RecommendState | null) ?? null;
+  const [commander, setCommander] = useState(init?.commander ?? '');
+  const [strategy, setStrategy] = useState(init?.strategy ?? '');
   const [busy, setBusy] = useState(false);
-  const [meta, setMeta] = useState<RecommendMeta | null>(null);
-  const [text, setText] = useState('');
+  const [meta, setMeta] = useState<RecommendMeta | null>(init?.meta ?? null);
+  const [status, setStatus] = useState('');
+  const [text, setText] = useState(init?.text ?? '');
   const [error, setError] = useState<string | null>(null);
   const acc = useRef('');
+  const metaRef = useRef<RecommendMeta | null>(init?.meta ?? null);
+  const sid = useRef<string | null>(sessionId);
   const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
-  }, [text, meta]);
+  }, [text, meta, status]);
 
   function run() {
     if (!strategy.trim()) return;
     setBusy(true);
     setError(null);
     setMeta(null);
+    setStatus('');
     setText('');
     acc.current = '';
+    metaRef.current = null;
     streamRecommend(
       { commander: commander.trim() || undefined, strategy: strategy.trim() },
       {
-        onMeta: setMeta,
+        onMeta: (m) => {
+          metaRef.current = m;
+          setMeta(m);
+        },
+        onStatus: setStatus,
         onDelta: (t) => {
+          setStatus('');
           acc.current += t;
           setText(acc.current);
         },
-        onDone: () => setBusy(false),
+        onDone: () => {
+          setBusy(false);
+          const state: RecommendState = {
+            commander,
+            strategy,
+            meta: metaRef.current,
+            text: acc.current,
+          };
+          void persist('recommend', strategy.trim().slice(0, 50) || commander || 'Recommendations', state, sid.current).then(
+            (id) => {
+              sid.current = id;
+            },
+          );
+        },
         onError: (m) => {
           setError(m);
+          setStatus('');
           setBusy(false);
         },
       },
@@ -619,8 +659,8 @@ function RecommendTab() {
             <div className="placeholder">
               <h2>Recommend cards</h2>
               <p>
-                Describe a strategy or keyword (and optionally a commander) — Commander Oracle searches
-                live Scryfall for real matching cards, then curates them by role.
+                Describe a strategy or keyword (and optionally a commander) — Commander Oracle searches live
+                Scryfall for real matching cards, then curates them by role.
               </p>
             </div>
           )}
@@ -642,6 +682,7 @@ function RecommendTab() {
               <Markdown text={text} streaming={busy} />
             </div>
           )}
+          {busy && !text && <WorkingBubble label={status || 'Searching Scryfall…'} />}
           {error && <div className="error-banner">⚠ {error}</div>}
         </div>
       </div>

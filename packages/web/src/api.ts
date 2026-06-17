@@ -14,14 +14,8 @@ export interface SessionMeta {
   mode: string;
   created_at: number;
   updated_at: number;
-}
-
-export interface StoredMessage {
-  id: string;
-  session_id: string;
-  role: string;
-  content: string;
-  created_at: number;
+  /** Serialized UI state for the tab (JSON); null until first save. */
+  state: string | null;
 }
 
 async function json<T>(res: Response): Promise<T> {
@@ -52,7 +46,7 @@ export const api = {
       body: JSON.stringify({ text, commander }),
     }).then(json<{ deck: CategorizedDeck }>),
 
-  // --- Sessions ---
+  // --- Sessions (unified history across all tabs) ---
   listSessions: () => fetch('/api/sessions').then(json<{ sessions: SessionMeta[] }>),
   createSession: (mode: string, title: string) =>
     fetch('/api/sessions', {
@@ -60,21 +54,15 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode, title }),
     }).then(json<{ session: SessionMeta }>),
-  getSession: (id: string) =>
-    fetch(`/api/sessions/${id}`).then(json<{ session: SessionMeta; messages: StoredMessage[] }>),
-  renameSession: (id: string, title: string) =>
+  getSession: (id: string) => fetch(`/api/sessions/${id}`).then(json<{ session: SessionMeta }>),
+  /** Save the title + serialized tab state for a session. */
+  saveSession: (id: string, title: string, state: string) =>
     fetch(`/api/sessions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, state }),
     }).then(json<{ ok: boolean }>),
   deleteSession: (id: string) => fetch(`/api/sessions/${id}`, { method: 'DELETE' }).then(json<{ ok: boolean }>),
-  addMessage: (id: string, role: string, content: string) =>
-    fetch(`/api/sessions/${id}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role, content }),
-    }).then(json<{ message: StoredMessage }>),
 };
 
 export interface RecommendMeta {

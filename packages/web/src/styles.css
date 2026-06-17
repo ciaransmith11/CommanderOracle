@@ -248,10 +248,33 @@ button {
   color: var(--ink);
   font-weight: 500;
 }
+.session__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
 .session__title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.session__mode {
+  font-family: 'Outfit', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--inkMute);
+}
+.session__mode--analyse {
+  color: var(--bronze);
+}
+.session__mode--build {
+  color: var(--mtgG);
+}
+.session__mode--recommend {
+  color: var(--mtgPurple);
 }
 .session__del {
   border: none;

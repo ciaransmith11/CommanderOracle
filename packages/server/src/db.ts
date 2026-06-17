@@ -29,12 +29,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
 `);
 
+// Migration: a session now carries its full UI state as a JSON blob so any tab
+// (analyse / build / recommend) can be saved and reloaded. Safe to re-run.
+try {
+  db.exec('ALTER TABLE sessions ADD COLUMN state TEXT');
+} catch {
+  /* column already exists */
+}
+
 export interface Session {
   id: string;
   title: string;
   mode: string;
   created_at: number;
   updated_at: number;
+  state: string | null;
 }
 
 export interface Message {
@@ -54,7 +63,7 @@ export const sessions = {
   },
   create(mode: string, title: string): Session {
     const now = Date.now();
-    const session: Session = { id: randomUUID(), title, mode, created_at: now, updated_at: now };
+    const session: Session = { id: randomUUID(), title, mode, created_at: now, updated_at: now, state: null };
     db.prepare(
       'INSERT INTO sessions (id, title, mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
     ).run(session.id, session.title, session.mode, session.created_at, session.updated_at);
@@ -62,6 +71,15 @@ export const sessions = {
   },
   rename(id: string, title: string): void {
     db.prepare('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?').run(title, Date.now(), id);
+  },
+  /** Save the title + serialized UI state (the whole conversation/result for that tab). */
+  save(id: string, title: string, state: string): void {
+    db.prepare('UPDATE sessions SET title = ?, state = ?, updated_at = ? WHERE id = ?').run(
+      title,
+      state,
+      Date.now(),
+      id,
+    );
   },
   touch(id: string): void {
     db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), id);
