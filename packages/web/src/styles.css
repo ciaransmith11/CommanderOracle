@@ -209,6 +209,9 @@ button {
 .tab--recommend {
   color: var(--mtgPurple);
 }
+.tab--rules {
+  color: var(--mtgU);
+}
 .tab:hover {
   opacity: 0.8;
 }
@@ -289,6 +292,9 @@ button {
 }
 .session__mode--recommend {
   color: var(--mtgPurple);
+}
+.session__mode--rules {
+  color: var(--mtgU);
 }
 .session__del {
   border: none;

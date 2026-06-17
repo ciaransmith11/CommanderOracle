@@ -200,3 +200,10 @@ export function streamChat(
 ): void {
   void streamPost('/api/chat', { deck, messages }, h);
 }
+
+export function streamRules(
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  h: StreamHandlers,
+): void {
+  void streamPost('/api/rules', { messages }, h);
+}

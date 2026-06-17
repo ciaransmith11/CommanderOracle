@@ -13,7 +13,12 @@ export function Sidebar({
   onNew: () => void;
   onDelete: (id: string) => void;
 }) {
-  const MODE_LABEL: Record<string, string> = { analyse: 'Analyse', build: 'Build', recommend: 'Recommend' };
+  const MODE_LABEL: Record<string, string> = {
+    analyse: 'Analyse',
+    build: 'Build',
+    recommend: 'Recommend',
+    rules: 'Rules',
+  };
   return (
     <aside className="sidebar">
       <div className="sidebar__head">

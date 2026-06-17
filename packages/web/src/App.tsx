@@ -6,6 +6,7 @@ import {
   streamBuild,
   streamChat,
   streamRecommend,
+  streamRules,
   type BuildStrategy,
   type Health,
   type RecommendMeta,
@@ -16,12 +17,13 @@ import { Sidebar } from './components/Sidebar.js';
 import { DeckEcho } from './components/DeckEcho.js';
 import { Markdown } from './components/Markdown.js';
 
-type Tab = 'analyse' | 'build' | 'recommend';
+type Tab = 'analyse' | 'build' | 'recommend' | 'rules';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'analyse', label: 'Analyse' },
   { id: 'build', label: 'Build' },
   { id: 'recommend', label: 'Recommend' },
+  { id: 'rules', label: 'Rules' },
 ];
 
 /** Persist a tab's full state under a session; creates one on first save. Returns the id. */
@@ -125,6 +127,7 @@ export function App() {
         {tab === 'analyse' && <AnalyseTab key={key} {...tabProps} />}
         {tab === 'build' && <BuildTab key={key} {...tabProps} />}
         {tab === 'recommend' && <RecommendTab key={key} {...tabProps} />}
+        {tab === 'rules' && <RulesTab key={key} {...tabProps} />}
       </main>
     </div>
   );
@@ -725,6 +728,108 @@ function RecommendTab({ initial, sessionId, persist }: TabProps) {
           Candidate cards come from a live Scryfall search; the model only curates real results.
         </div>
       </div>
+    </>
+  );
+}
+
+// --- Rules ----------------------------------------------------------------
+
+interface RulesState {
+  convo: BuildMsg[];
+}
+
+function RulesTab({ initial, sessionId, persist }: TabProps) {
+  const init = (initial as RulesState | null) ?? null;
+  const [convo, setConvo] = useState<BuildMsg[]>(init?.convo ?? []);
+  const [streaming, setStreaming] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const acc = useRef('');
+  const sid = useRef<string | null>(sessionId);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: contentRef.current.scrollHeight });
+  }, [convo, streaming, status]);
+
+  function save(done: BuildMsg[]) {
+    const firstQ = done.find((m) => m.role === 'user')?.content ?? 'Rules question';
+    void persist('rules', firstQ.slice(0, 70), { convo: done } satisfies RulesState, sid.current).then((id) => {
+      sid.current = id;
+    });
+  }
+
+  function send(text: string) {
+    const next: BuildMsg[] = [...convo, { role: 'user', content: text }];
+    setConvo(next);
+    setBusy(true);
+    setError(null);
+    setStreaming('');
+    setStatus('');
+    acc.current = '';
+    streamRules(next, {
+      onStatus: setStatus,
+      onDelta: (t) => {
+        setStatus('');
+        acc.current += t;
+        setStreaming(acc.current);
+      },
+      onDone: () => {
+        const done: BuildMsg[] = [...next, { role: 'assistant', content: acc.current }];
+        setConvo(done);
+        setStreaming('');
+        setStatus('');
+        setBusy(false);
+        save(done);
+      },
+      onError: (m) => {
+        setError(m);
+        setStreaming('');
+        setStatus('');
+        setBusy(false);
+      },
+    });
+  }
+
+  return (
+    <>
+      <div className="content" ref={contentRef}>
+        <div className="thread">
+          {convo.length === 0 && !busy && (
+            <div className="placeholder">
+              <h2>Rules & gameplay</h2>
+              <p>
+                Ask any Magic rules or interaction question. Answers are grounded in real card text from
+                Scryfall, with step-by-step reasoning.
+              </p>
+            </div>
+          )}
+          {convo.map((m, i) =>
+            m.role === 'assistant' ? (
+              <div className="bubble bubble--assistant" key={i}>
+                <Markdown text={m.content} />
+              </div>
+            ) : (
+              <div className="bubble bubble--user" key={i}>
+                {m.content}
+              </div>
+            ),
+          )}
+          {streaming && (
+            <div className="bubble bubble--assistant">
+              <Markdown text={streaming} streaming />
+            </div>
+          )}
+          {busy && !streaming && <WorkingBubble label={status || 'Checking the rules…'} />}
+          {error && <div className="error-banner">⚠ {error}</div>}
+        </div>
+      </div>
+      <ChatComposer
+        busy={busy}
+        placeholder="Ask a rules question — e.g. “If I flicker a creature in response to its own ETB trigger, what happens?”"
+        onSubmit={send}
+      />
     </>
   );
 }

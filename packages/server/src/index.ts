@@ -8,6 +8,7 @@ import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
 import { fetchCollection, namedCard, resolveEntries } from './scryfall.js';
 import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
+import { rulesChat } from './rules.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
 import { sessions } from './db.js';
 
@@ -120,6 +121,15 @@ app.post('/api/build/strategies', async (c) => {
 
   const strategies = await proposeStrategies(commander);
   return c.json({ commander, strategies });
+});
+
+app.post('/api/rules', async (c) => {
+  if (!hasApiKey()) return c.json({ error: 'ANTHROPIC_API_KEY not set' }, 503);
+  const body = await c.req.json<{ messages?: { role: 'user' | 'assistant'; content: string }[] }>();
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return c.json({ error: 'missing messages' }, 400);
+  }
+  return sseFromGenerator(c, () => rulesChat(body.messages!));
 });
 
 app.post('/api/build', async (c) => {
