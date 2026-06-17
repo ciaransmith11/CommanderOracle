@@ -27,6 +27,21 @@ const TABS: { id: Tab; label: string }[] = [
 /** Persist a tab's full state under a session; creates one on first save. Returns the id. */
 type Persist = (mode: Tab, title: string, state: unknown, existingId: string | null) => Promise<string>;
 
+/** The first Markdown heading in a response, cleaned up — used to title a session. */
+function firstHeading(markdown: string): string | null {
+  for (const line of markdown.split('\n')) {
+    const m = line.match(/^#{1,6}\s+(.+)$/);
+    if (m && m[1]) {
+      return m[1]
+        .replace(/[*_`]/g, '')
+        .replace(/[#]+$/, '')
+        .trim()
+        .slice(0, 60);
+    }
+  }
+  return null;
+}
+
 interface TabProps {
   initial: unknown | null;
   sessionId: string | null;
@@ -99,7 +114,7 @@ export function App() {
           {TABS.map((t) => (
             <button
               key={t.id}
-              className={`tab${tab === t.id ? ' tab--active' : ''}`}
+              className={`tab tab--${t.id}${tab === t.id ? ' tab--active' : ''}`}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -636,11 +651,11 @@ function RecommendTab({ initial, sessionId, persist }: TabProps) {
             meta: metaRef.current,
             text: acc.current,
           };
-          void persist('recommend', strategy.trim().slice(0, 50) || commander || 'Recommendations', state, sid.current).then(
-            (id) => {
-              sid.current = id;
-            },
-          );
+          const title =
+            firstHeading(acc.current) || strategy.trim().slice(0, 50) || commander || 'Recommendations';
+          void persist('recommend', title, state, sid.current).then((id) => {
+            sid.current = id;
+          });
         },
         onError: (m) => {
           setError(m);

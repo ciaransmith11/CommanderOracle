@@ -195,12 +195,26 @@ button {
   padding: 10px 16px;
   border: none;
   background: none;
-  color: var(--inkMute);
   border-bottom: 3px solid transparent;
+  /* Each tab carries its mode colour (matching the History tags); inactive tabs
+     are dimmed, the active tab is full strength with a matching underline. */
+  opacity: 0.5;
+}
+.tab--analyse {
+  color: var(--bronze);
+}
+.tab--build {
+  color: var(--mtgG);
+}
+.tab--recommend {
+  color: var(--mtgPurple);
+}
+.tab:hover {
+  opacity: 0.8;
 }
 .tab--active {
-  color: var(--bronze);
-  border-bottom-color: var(--bronzeBorder);
+  opacity: 1;
+  border-bottom-color: currentColor;
 }
 
 /* --- Sidebar -------------------------------------------------------------- */
