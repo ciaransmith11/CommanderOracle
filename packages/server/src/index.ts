@@ -6,7 +6,7 @@ import { categorise, parseDecklist } from '@commander-oracle/core';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
-import { fetchCollection, namedCard, resolveEntries } from './scryfall.js';
+import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries } from './scryfall.js';
 import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
 import { rulesChat } from './rules.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
@@ -29,6 +29,12 @@ app.get('/api/card', async (c) => {
   const card = await namedCard(name);
   if (!card) return c.json({ error: 'not found' }, 404);
   return c.json({ card });
+});
+
+// Commander name type-ahead suggestions (Scryfall only, no model/key needed).
+app.get('/api/autocomplete', async (c) => {
+  const names = await autocompleteCommanders(c.req.query('q') ?? '');
+  return c.json({ names });
 });
 
 // Batch-resolve many card names in one go (collection endpoint, ≤75/request).

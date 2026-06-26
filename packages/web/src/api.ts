@@ -32,6 +32,10 @@ export const api = {
   lookupCard: (name: string) =>
     fetch(`/api/card?name=${encodeURIComponent(name)}`).then(json<{ card: Card }>),
 
+  /** Commander name suggestions for type-ahead. */
+  autocomplete: (q: string) =>
+    fetch(`/api/autocomplete?q=${encodeURIComponent(q)}`).then(json<{ names: string[] }>),
+
   /** Batch-resolve card names (one request, collection endpoint server-side). */
   lookupCards: (names: string[]) =>
     fetch('/api/cards', {

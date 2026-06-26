@@ -16,6 +16,7 @@ import { Header } from './components/Header.js';
 import { Sidebar } from './components/Sidebar.js';
 import { DeckEcho } from './components/DeckEcho.js';
 import { Markdown } from './components/Markdown.js';
+import { CommanderInput } from './components/CommanderInput.js';
 
 type Tab = 'analyse' | 'build' | 'recommend' | 'rules';
 
@@ -356,12 +357,7 @@ function AnalyseComposer({ busy, onSubmit }: { busy: boolean; onSubmit: (text: s
   return (
     <div className="composer">
       <div className="composer__row">
-        <input
-          type="text"
-          placeholder="Commander (required)"
-          value={commander}
-          onChange={(e) => setCommander(e.target.value)}
-        />
+        <CommanderInput value={commander} onChange={setCommander} placeholder="Commander (required)" />
       </div>
       <div className="composer__inner">
         <textarea
@@ -577,12 +573,11 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
       ) : (
         <div className="composer">
           <div className="composer__inner">
-            <input
-              type="text"
-              placeholder="Commander (e.g. Krenko, Mob Boss)"
+            <CommanderInput
               value={commander}
-              onChange={(e) => setCommander(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && explore()}
+              onChange={setCommander}
+              placeholder="Commander (e.g. Krenko, Mob Boss)"
+              onEnter={explore}
             />
             <button className="btn-send" disabled={busy || !commander.trim()} onClick={explore}>
               {busy && !strategies ? 'Exploring…' : 'Explore strategies'}
@@ -706,11 +701,10 @@ function RecommendTab({ initial, sessionId, persist }: TabProps) {
       </div>
       <div className="composer">
         <div className="composer__row">
-          <input
-            type="text"
-            placeholder="Commander (optional, constrains colour identity)"
+          <CommanderInput
             value={commander}
-            onChange={(e) => setCommander(e.target.value)}
+            onChange={setCommander}
+            placeholder="Commander (optional, constrains colour identity)"
           />
         </div>
         <div className="composer__inner">

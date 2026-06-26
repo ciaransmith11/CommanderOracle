@@ -194,6 +194,24 @@ export async function searchCards(query: string, limit = 25): Promise<Card[]> {
 }
 
 /**
+ * Commander name suggestions for type-ahead. Restricted to legal commanders and
+ * ranked by EDHREC popularity, so the obvious choices surface first. Returns
+ * just names; [] for short queries or no match.
+ */
+export async function autocompleteCommanders(query: string): Promise<string[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const params = new URLSearchParams({ q: `${q} is:commander`, order: 'edhrec', unique: 'cards' });
+  const res = await fetch(`${SEARCH_ENDPOINT}?${params.toString()}`, { headers: REQUEST_HEADERS });
+  if (!res.ok) return [];
+  const json = (await res.json()) as { data?: { name?: string }[] };
+  return (json.data ?? [])
+    .map((c) => c.name)
+    .filter((n): n is string => typeof n === 'string')
+    .slice(0, 8);
+}
+
+/**
  * Resolve parsed decklist entries to `{ qty, card }` items, preserving entry
  * order. Basic lands are synthesized locally; everything else is fetched.
  * Names Scryfall doesn't recognise are returned in `unresolved`.
