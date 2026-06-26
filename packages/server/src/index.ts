@@ -15,6 +15,17 @@ import { sessions } from './db.js';
 const app = new Hono();
 app.use('/api/*', cors());
 
+// Any uncaught error (e.g. the model API rejecting) becomes a JSON { error }
+// with its real message, so the UI shows the actual cause, not "request failed".
+app.onError((err, c) => {
+  let message = err instanceof Error ? err.message : String(err);
+  // Unwrap Anthropic-style "<status> {json...}" into the human-readable message.
+  const inner = message.match(/"message":"([^"]+)"/);
+  if (inner) message = inner[1]!;
+  console.error('Request error:', message);
+  return c.json({ error: message }, 500);
+});
+
 // --- Health ---------------------------------------------------------------
 
 app.get('/api/health', (c) =>
