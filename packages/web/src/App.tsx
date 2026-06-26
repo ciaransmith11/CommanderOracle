@@ -17,6 +17,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { DeckEcho } from './components/DeckEcho.js';
 import { Markdown } from './components/Markdown.js';
 import { CommanderInput } from './components/CommanderInput.js';
+import { BuildDeckPanel } from './components/BuildDeckPanel.js';
 
 type Tab = 'analyse' | 'build' | 'recommend' | 'rules';
 
@@ -537,8 +538,15 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
           {chosen &&
             convo.map((m, i) =>
               m.role === 'assistant' ? (
-                <div className="bubble bubble--assistant" key={i}>
-                  <Markdown text={m.content} />
+                <div key={i}>
+                  <div className="bubble bubble--assistant">
+                    <Markdown text={m.content} />
+                  </div>
+                  <BuildDeckPanel
+                    text={m.content}
+                    commanderName={commanderCard?.name ?? commander}
+                    colorIdentity={commanderCard?.colorIdentity ?? []}
+                  />
                 </div>
               ) : (
                 <div className="bubble bubble--user" key={i}>

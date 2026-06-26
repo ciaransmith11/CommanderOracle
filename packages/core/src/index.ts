@@ -10,4 +10,5 @@
 export { parseDecklist } from './decklist.js';
 export { categorise, categoriseCard } from './categorise.js';
 export { BASIC_LANDS, isBasicLand, basicLandCard } from './basics.js';
+export { balanceBasicsToTarget, type BalanceResult } from './deckbalance.js';
 export { SLOT_BASELINES, DESIGN_PHILOSOPHY, type SlotBaseline } from './doctrine.js';

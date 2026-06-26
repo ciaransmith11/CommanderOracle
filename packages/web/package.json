@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@commander-oracle/core": "workspace:*",
     "@commander-oracle/shared": "workspace:*",
     "marked": "^14.1.4",
     "react": "^18.3.1",

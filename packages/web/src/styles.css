@@ -455,6 +455,10 @@ button {
   background: var(--bronzePale);
 }
 
+.deckpanel {
+  margin-top: 10px;
+}
+
 /* --- Deck echo ------------------------------------------------------------ */
 
 .echo {

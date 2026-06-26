@@ -67,6 +67,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@commander-oracle/core':
+        specifier: workspace:*
+        version: link:../core
       '@commander-oracle/shared':
         specifier: workspace:*
         version: link:../shared
