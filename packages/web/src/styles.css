@@ -97,27 +97,30 @@ button {
   position: relative;
   background: var(--headerBg);
   border-bottom: 3px solid var(--bronze);
-  padding: 16px 24px;
+  padding: 32px 24px;
   overflow: hidden;
 }
-/* Card artwork, anchored to the right and dimmed; sits behind the gradient. */
+/* Card artwork: a wide crop covering ~80% of the header width, anchored right,
+   with its own left edge masked out so it dissolves into the walnut background. */
 .header::after {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('/header-art.jpeg');
-  background-size: cover;
-  background-position: center 28%;
-  opacity: 0.7;
+  background-image: var(--header-art);
+  background-repeat: no-repeat;
+  background-position: right 10%;
+  background-size: 70% auto;
+  opacity: 0.3;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
   z-index: 0;
 }
-/* Gradient overlay: solid on the left so the title stays crisp, fading right so
-   the artwork shows through behind the colour dots. */
+/* Light left-side wash so the title keeps its contrast over the fade. */
 .header::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, var(--headerBg) 28%, rgba(30, 26, 18, 0.45) 100%);
+  background: linear-gradient(90deg, var(--headerBg) 22%, rgba(30, 26, 18, 0) 55%);
   z-index: 1;
 }
 .header__inner {
@@ -178,6 +181,25 @@ button {
 }
 .pip--C {
   background: var(--mtgC);
+}
+
+/* Header dots only: a soft drop shadow for depth and a top-left glint so each
+   reads as a glossy sphere. Scoped to .pips so inline card pips are untouched. */
+.pips .pip {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+.pips .pip::before {
+  content: '';
+  position: absolute;
+  top: 12%;
+  left: 16%;
+  width: 42%;
+  height: 38%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
 }
 
 /* inline pips (smaller, in prose / echo) */
