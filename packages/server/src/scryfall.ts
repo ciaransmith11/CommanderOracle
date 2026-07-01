@@ -14,7 +14,11 @@ import { basicLandCard, isBasicLand } from '@commander-oracle/core';
 const COLLECTION_ENDPOINT = 'https://api.scryfall.com/cards/collection';
 const SEARCH_ENDPOINT = 'https://api.scryfall.com/cards/search';
 const MAX_IDENTIFIERS = 75;
-const THROTTLE_MS = 100; // Scryfall asks for ~50–100ms between requests.
+// Scryfall enforces <10 req/s across the whole app and asks for a 50–100ms gap
+// between requests. 120ms (~8/s) keeps us safely under the ceiling even when an
+// analysis fires dozens of tool-driven searches back to back.
+const THROTTLE_MS = 120;
+const MAX_ATTEMPTS = 4; // retry 429 / 5xx a few times with backoff.
 
 const REQUEST_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
@@ -130,6 +134,47 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// --- Global request throttle + retry --------------------------------------
+// EVERY outbound Scryfall request funnels through one promise chain so their
+// START times are spaced ≥ THROTTLE_MS apart, app-wide — regardless of how many
+// analyses, tool calls, or hover lookups run concurrently. Without this, a
+// single analysis firing dozens of unthrottled searches trips Scryfall's 10
+// req/s limit, and the resulting 429s sink the collection lookups that back
+// hover previews (cards resolve to null → no hover image).
+
+let gate: Promise<void> = Promise.resolve();
+
+/** Reserve the next request slot; resolves when it is this caller's turn. */
+function reserveSlot(): Promise<void> {
+  const ready = gate;
+  gate = ready.then(() => sleep(THROTTLE_MS));
+  return ready;
+}
+
+/**
+ * Throttled fetch with backoff on 429 / 5xx. On persistent failure it returns
+ * the final (non-OK) response so callers keep their existing error handling.
+ */
+async function scryfallFetch(url: string, init?: RequestInit): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    await reserveSlot();
+    const res = await fetch(url, {
+      ...init,
+      headers: { ...REQUEST_HEADERS, ...(init?.headers as Record<string, string> | undefined) },
+    });
+
+    if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
+      const retryAfter = Number(res.headers.get('retry-after'));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 4000)
+        : THROTTLE_MS * 2 ** attempt; // 240ms, 480ms, 960ms
+      await sleep(delay);
+      continue;
+    }
+    return res;
+  }
+}
+
 /**
  * Fetch cards by name via the collection endpoint. Returns normalized cards and
  * the names Scryfall could not resolve.
@@ -142,12 +187,9 @@ export async function fetchCollection(
 
   const batches = chunk(names, MAX_IDENTIFIERS);
   for (let i = 0; i < batches.length; i++) {
-    if (i > 0) await sleep(THROTTLE_MS);
-
     const identifiers = batches[i]!.map((name) => ({ name }));
-    const res = await fetch(COLLECTION_ENDPOINT, {
+    const res = await scryfallFetch(COLLECTION_ENDPOINT, {
       method: 'POST',
-      headers: REQUEST_HEADERS,
       body: JSON.stringify({ identifiers }),
     });
 
@@ -171,9 +213,8 @@ export async function fetchCollection(
  * need. Returns null on no/ambiguous match.
  */
 export async function namedCard(name: string): Promise<Card | null> {
-  const res = await fetch(
+  const res = await scryfallFetch(
     `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`,
-    { headers: REQUEST_HEADERS },
   );
   if (!res.ok) return null;
   return normalizeCard((await res.json()) as ScryfallCard);
@@ -187,7 +228,7 @@ export async function namedCard(name: string): Promise<Card | null> {
  */
 export async function searchCards(query: string, limit = 25): Promise<Card[]> {
   const params = new URLSearchParams({ q: query, order: 'edhrec', unique: 'cards' });
-  const res = await fetch(`${SEARCH_ENDPOINT}?${params.toString()}`, { headers: REQUEST_HEADERS });
+  const res = await scryfallFetch(`${SEARCH_ENDPOINT}?${params.toString()}`);
   if (!res.ok) return [];
   const json = (await res.json()) as { data?: ScryfallCard[] };
   return (json.data ?? []).slice(0, limit).map(normalizeCard);
@@ -202,7 +243,7 @@ export async function autocompleteCommanders(query: string): Promise<string[]> {
   const q = query.trim();
   if (q.length < 2) return [];
   const params = new URLSearchParams({ q: `${q} is:commander`, order: 'edhrec', unique: 'cards' });
-  const res = await fetch(`${SEARCH_ENDPOINT}?${params.toString()}`, { headers: REQUEST_HEADERS });
+  const res = await scryfallFetch(`${SEARCH_ENDPOINT}?${params.toString()}`);
   if (!res.ok) return [];
   const json = (await res.json()) as { data?: { name?: string }[] };
   return (json.data ?? [])
