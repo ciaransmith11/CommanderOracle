@@ -36,30 +36,54 @@ describe('balanceResolvedDeck', () => {
     expect(r.reconciled).toBe(true);
   });
 
-  it('does NOT bloat lands when too few non-land cards — caps at the sweet spot and flags a shortfall', () => {
-    // Only 50 non-land + 8 nonbasic lands. Naive padding would make 41 lands; instead cap at 38.
+  it('still reaches exactly 100 when short on non-land cards, and flags the shortfall', () => {
+    // Only 50 non-land + 8 nonbasic lands. Lands fill the remainder to reach 99.
     const r = balanceResolvedDeck(
       [...spells(50), { name: 'Command Tower', qty: 8, isLand: true }],
       ['G'],
     );
-    expect(r.landCount).toBe(38); // capped, not 49
-    expect(r.total).toBe(88); // left short on purpose
+    expect(r.total).toBe(99); // always 100 with the commander
+    expect(r.landCount).toBe(49); // 99 − 50, high because non-land is short
     expect(r.nonlandCount).toBe(50);
-    expect(r.shortBy).toBe(9); // 59 − 50
+    expect(r.shortBy).toBe(9); // 59 − 50 → flagged so lands aren't left bloated
     expect(r.overBy).toBe(0);
-    expect(r.reconciled).toBe(false);
+    expect(r.reconciled).toBe(false); // count is 100 but lands are outside 37–40
   });
 
-  it('flags an over-list WITHOUT cutting the lands (holds them at the sweet spot)', () => {
+  it('AUTO-TRIMS an over-list down to a healthy 38-land, 100-card deck', () => {
     const r = balanceResolvedDeck(
       [...spells(70), { name: 'Command Tower', qty: 8, isLand: true }],
       ['R'],
     );
-    expect(r.nonlandCount).toBe(70);
-    expect(r.landCount).toBe(38); // NOT squeezed to 99 − 70 = 29
-    expect(r.overBy).toBe(8); // 70 − 62
-    expect(r.shortBy).toBe(0);
-    expect(r.reconciled).toBe(false);
+    expect(r.nonlandCount).toBe(61); // trimmed 70 → 61
+    expect(r.trimmed).toHaveLength(9);
+    expect(r.landCount).toBe(38);
+    expect(r.total).toBe(99); // → 100 with commander
+    expect(r.overBy).toBe(0); // fixed, not just flagged
+    expect(r.reconciled).toBe(true);
+  });
+
+  it('trims the LEAST-played cards first (by EDHREC rank), keeping the staples', () => {
+    const good = Array.from({ length: 61 }, (_, i) => ({
+      name: `Staple ${i + 1}`,
+      qty: 1,
+      isLand: false,
+      edhrecRank: 100 + i,
+    }));
+    const r = balanceResolvedDeck(
+      [
+        ...good,
+        { name: 'Obscure Ranked', qty: 1, isLand: false, edhrecRank: 99999 },
+        { name: 'Unranked Jank', qty: 1, isLand: false, edhrecRank: null },
+      ],
+      ['R'],
+    );
+    // 63 non-land → trim the 2 worst: the unranked one and the high-rank one.
+    expect(r.trimmed.sort()).toEqual(['Obscure Ranked', 'Unranked Jank']);
+    expect(r.entries.some((e) => e.name === 'Staple 1')).toBe(true);
+    expect(r.nonlandCount).toBe(61);
+    expect(r.total).toBe(99);
+    expect(r.reconciled).toBe(true);
   });
 
   it('creates basics from the colour identity when none are present', () => {

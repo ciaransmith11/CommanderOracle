@@ -173,6 +173,10 @@ export function buildChat(
     '\nAfter the initial build, answer any follow-up questions the player asks, staying grounded in real card data via the tools.',
   ].join('\n');
 
+  // Stream the build live. The count is guaranteed downstream: the client's
+  // reconcile (/api/build/reconcile → balanceResolvedDeck) always fills basics
+  // to exactly 99 → 100. The prompt drives the model toward 59–62 non-land
+  // cards so those filled lands stay healthy; if it misses, the panel flags it.
   return streamModelWithTools({
     systemBlocks: systemBlocks(),
     messages: [{ role: 'user', content: context }, ...history],

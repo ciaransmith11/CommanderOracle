@@ -92,23 +92,22 @@ export function BuildDeckPanel({
         </span>
       </div>
 
-      {result.overBy > 0 && (
-        <div className="echo__unresolved">
-          ⚠ {result.overBy} too many non-land card{result.overBy === 1 ? '' : 's'} ({result.nonlandCount} listed).
-          Cutting lands to compensate would wreck the mana base, so nothing was removed — trim {result.overBy}{' '}
-          non-land card{result.overBy === 1 ? '' : 's'} (or ask for cuts).
+      {result.trimmed.length > 0 && (
+        <div className="echo__meta" style={{ marginBottom: 8 }}>
+          Auto-trimmed {result.trimmed.length} least-played non-land card{result.trimmed.length === 1 ? '' : 's'} to
+          fit {result.landCount} lands: {result.trimmed.join(', ')}.
         </div>
       )}
       {result.shortBy > 0 && (
         <div className="echo__unresolved">
-          ⚠ {result.shortBy} non-land card{result.shortBy === 1 ? '' : 's'} short ({result.nonlandCount} listed).
-          Lands are held at {result.landCount} rather than padded to fill the gap — add {result.shortBy} more
-          non-land card{result.shortBy === 1 ? '' : 's'} to reach 100.
+          ⚠ Only {result.nonlandCount} non-land cards, so lands filled up to {result.landCount} to reach 100. Add{' '}
+          {result.shortBy} more non-land card{result.shortBy === 1 ? '' : 's'} (and cut that many lands) for a
+          healthier ~38.
         </div>
       )}
-      {result.overBy === 0 && result.shortBy === 0 && !result.reconciled && (
+      {result.shortBy === 0 && result.trimmed.length === 0 && !result.reconciled && (
         <div className="echo__unresolved">
-          ⚠ {result.landCount} lands is outside the healthy 37–40 range — adjust the nonbasic lands.
+          ⚠ {result.landCount} lands is outside the healthy 37–40 range — too many nonbasic lands; trim some.
         </div>
       )}
 

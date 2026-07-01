@@ -35,29 +35,33 @@ const LAND_MAX = 40;
 const LAND_SWEET = 38;
 const NONLAND_MIN = DECK_TARGET - LAND_MAX; // 59
 const NONLAND_MAX = DECK_TARGET - LAND_MIN; // 62
+const NONLAND_SWEET = DECK_TARGET - LAND_SWEET; // 61
 
-/** A card the model proposed, tagged with whether it is a land (from real type data). */
+/** A card the model proposed, tagged with real type data. `edhrecRank` (lower = more played) orders auto-trims. */
 export interface ResolvedDeckEntry {
   name: string;
   qty: number;
   isLand: boolean;
+  edhrecRank?: number | null;
 }
 
 export interface DeckBalanceResult {
-  /** Final list (basics recomputed), de-duplicated, alphabetically sorted. */
+  /** Final list (basics recomputed, over-lists auto-trimmed), de-duplicated, alphabetically sorted. */
   entries: CardEntry[];
   /** Sum of quantities. */
   total: number;
-  /** Non-land cards (the lever that fixes the land count). */
+  /** Non-land cards after any auto-trim. */
   nonlandCount: number;
   /** Lands after balancing (nonbasic lands + basics). */
   landCount: number;
   /** True when the deck is well-formed: exactly 99 cards with lands in the 37–40 band. */
   reconciled: boolean;
-  /** Non-land cards to TRIM (model listed too many); 0 otherwise. */
+  /** Non-land cards still over the band after trimming (only if nonbasic lands alone crowd the deck). */
   overBy: number;
-  /** Non-land cards to ADD (model listed too few); 0 otherwise. */
+  /** Non-land cards to ADD (model listed too few — we can't invent spells); 0 otherwise. */
   shortBy: number;
+  /** Non-land cards the balancer auto-removed (least-played first) to reach a healthy land count. */
+  trimmed: string[];
 }
 
 /**
@@ -77,26 +81,39 @@ export function balanceResolvedDeck(
   }
   const all = [...merged.values()];
 
-  // Keep the model's non-land cards and NONBASIC lands as-is; basics are
-  // recomputed as the filler (we discard whatever basic counts it guessed).
-  const kept = all.filter((e) => !e.isLand || !isBasicLand(e.name));
-  const nonlandCount = kept.filter((e) => !e.isLand).reduce((n, e) => n + e.qty, 0);
-  const nonbasicLandCount = kept.filter((e) => e.isLand).reduce((n, e) => n + e.qty, 0);
+  // Split the model's list: non-land cards and NONBASIC lands are kept; the
+  // model's basic-land guess is discarded and recomputed as the filler.
+  const nonland = all.filter((e) => !e.isLand);
+  const nonbasicLands = all.filter((e) => e.isLand && !isBasicLand(e.name));
+  const nonbasicLandCount = nonbasicLands.reduce((n, e) => n + e.qty, 0);
 
-  // Decide how many lands the deck should end up with. The land count is NEVER
-  // squeezed or bloated to force a 99 total — that's what wrecks the mana base.
-  let targetLands: number;
-  if (nonlandCount >= NONLAND_MIN && nonlandCount <= NONLAND_MAX) {
-    // Healthy: lands = 99 − non-land, which sits in the 37–40 band → reconciles.
-    targetLands = DECK_TARGET - nonlandCount;
-  } else {
-    // Out of band (too many OR too few non-land cards): hold lands at the sweet
-    // spot and flag the delta (add/trim non-land cards) rather than cutting or
-    // padding lands to hit 99.
-    targetLands = LAND_SWEET;
+  // AUTO-FIX an over-list: if there are too many non-land cards to fit a healthy
+  // land count, remove the least-played ones (worst EDHREC rank first; unranked
+  // counts as least-played) down to the 38-land sweet spot — rather than
+  // squeezing lands. This actually corrects the deck instead of just flagging it.
+  const trimmed: string[] = [];
+  let nonlandCount = nonland.reduce((n, e) => n + e.qty, 0);
+  if (nonlandCount > NONLAND_MAX) {
+    let toTrim = nonlandCount - NONLAND_SWEET; // → 61 non-land, 38 lands
+    const worstFirst = [...nonland].sort(
+      (a, b) => rankValue(b) - rankValue(a) || a.name.localeCompare(b.name),
+    );
+    for (const entry of worstFirst) {
+      if (toTrim <= 0) break;
+      const take = Math.min(entry.qty, toTrim);
+      entry.qty -= take;
+      toTrim -= take;
+      for (let i = 0; i < take; i++) trimmed.push(entry.name);
+    }
+    nonlandCount = nonland.reduce((n, e) => n + e.qty, 0);
   }
 
-  const basicsNeeded = Math.max(0, targetLands - nonbasicLandCount);
+  // Basics fill whatever is still needed to reach exactly 99 (→ 100 with the
+  // commander). After the trim above, lands land in the healthy band; if the
+  // model was SHORT on non-land cards we can't invent spells, so lands fill
+  // higher and shortBy flags it — but the deck is always 100.
+  const kept = [...nonland, ...nonbasicLands].filter((e) => e.qty > 0);
+  const basicsNeeded = Math.max(0, DECK_TARGET - nonlandCount - nonbasicLandCount);
   const entries: CardEntry[] = kept.map((e) => ({ name: e.name, qty: e.qty }));
   if (basicsNeeded > 0) addBasics(entries, basicsNeeded, colorIdentity);
 
@@ -112,7 +129,13 @@ export function balanceResolvedDeck(
     reconciled: total === DECK_TARGET && landCount >= LAND_MIN && landCount <= LAND_MAX,
     overBy: Math.max(0, nonlandCount - NONLAND_MAX),
     shortBy: Math.max(0, NONLAND_MIN - nonlandCount),
+    trimmed,
   };
+}
+
+/** EDHREC rank as a sortable number; unranked cards sort as least-played (trimmed first). */
+function rankValue(e: ResolvedDeckEntry): number {
+  return e.edhrecRank == null ? Number.POSITIVE_INFINITY : e.edhrecRank;
 }
 
 /** Distribute `count` basic lands across the commander's colours (Wastes if colourless), round-robin. */

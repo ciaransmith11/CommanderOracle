@@ -184,11 +184,12 @@ app.post('/api/build/reconcile', async (c) => {
     name: card.name,
     qty,
     isLand: /\bLand\b/.test(card.typeLine),
+    edhrecRank: card.edhrecRank,
   }));
   // Names Scryfall couldn't find still occupy slots — count them as non-land.
   const qtyByName = new Map(parsed.entries.map((e) => [e.name.toLowerCase(), e.qty]));
   for (const name of unresolved) {
-    resolvedEntries.push({ name, qty: qtyByName.get(name.toLowerCase()) ?? 1, isLand: false });
+    resolvedEntries.push({ name, qty: qtyByName.get(name.toLowerCase()) ?? 1, isLand: false, edhrecRank: null });
   }
 
   const result = balanceResolvedDeck(resolvedEntries, colorIdentity ?? []);
