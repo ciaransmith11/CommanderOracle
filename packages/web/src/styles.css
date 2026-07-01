@@ -100,11 +100,24 @@ button {
   padding: 16px 24px;
   overflow: hidden;
 }
+/* Card artwork, anchored to the right and dimmed; sits behind the gradient. */
+.header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('/header-art.jpeg');
+  background-size: cover;
+  background-position: center 28%;
+  opacity: 0.7;
+  z-index: 0;
+}
+/* Gradient overlay: solid on the left so the title stays crisp, fading right so
+   the artwork shows through behind the colour dots. */
 .header::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, var(--headerBg) 35%, rgba(30, 26, 18, 0.7) 100%);
+  background: linear-gradient(90deg, var(--headerBg) 28%, rgba(30, 26, 18, 0.45) 100%);
   z-index: 1;
 }
 .header__inner {

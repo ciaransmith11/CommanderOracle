@@ -1,13 +1,11 @@
 const COLORS = ['W', 'U', 'B', 'R', 'G'] as const;
 
-/** The five mana pips shown in the header. */
+/** The five mana pips shown in the header — colour dots only, no letters. */
 export function HeaderPips() {
   return (
-    <div className="pips">
+    <div className="pips" aria-label="WUBRG colour identity">
       {COLORS.map((c) => (
-        <span key={c} className={`pip pip--${c}`}>
-          {c}
-        </span>
+        <span key={c} className={`pip pip--${c}`} aria-hidden="true" />
       ))}
     </div>
   );

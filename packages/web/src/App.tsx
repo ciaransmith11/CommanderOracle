@@ -22,8 +22,8 @@ import { BuildDeckPanel } from './components/BuildDeckPanel.js';
 type Tab = 'analyse' | 'build' | 'recommend' | 'rules';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'analyse', label: 'Analyse' },
   { id: 'build', label: 'Build' },
+  { id: 'analyse', label: 'Analyse' },
   { id: 'recommend', label: 'Recommend' },
   { id: 'rules', label: 'Rules' },
 ];
@@ -54,7 +54,7 @@ interface TabProps {
 
 export function App() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [tab, setTab] = useState<Tab>('analyse');
+  const [tab, setTab] = useState<Tab>('build');
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [selected, setSelected] = useState<{ id: string; mode: string; state: unknown } | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -105,7 +105,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Header model={health?.model} hasApiKey={health?.hasApiKey} />
+      <Header hasApiKey={health?.hasApiKey} />
       <Sidebar
         sessions={sessions}
         activeId={selected?.id ?? null}
