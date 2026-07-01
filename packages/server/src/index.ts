@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
-import { categorise, parseDecklist } from '@commander-oracle/core';
+import { balanceResolvedDeck, categorise, parseDecklist } from '@commander-oracle/core';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
@@ -165,6 +165,34 @@ app.post('/api/build', async (c) => {
   if (!commander) return c.json({ error: `commander not found: ${body.commander}` }, 404);
 
   return sseFromGenerator(c, () => buildChat(commander, body.strategy!, body.messages ?? []));
+});
+
+/**
+ * Reconcile a proposed build decklist to exactly 100. Resolves the block
+ * through Scryfall for REAL type lines, then balances land-aware: fills basics
+ * only when the non-land count is healthy, and never inflates lands past the
+ * 37–40 band (so an under-filled deck is flagged, not padded into a mana glut).
+ */
+app.post('/api/build/reconcile', async (c) => {
+  const { text, colorIdentity } = await c.req.json<{ text?: string; colorIdentity?: string[] }>();
+  if (!text?.trim()) return c.json({ error: 'missing decklist text' }, 400);
+
+  const parsed = parseDecklist(text);
+  const { items, unresolved } = await resolveEntries(parsed.entries);
+
+  const resolvedEntries = items.map(({ qty, card }) => ({
+    name: card.name,
+    qty,
+    isLand: /\bLand\b/.test(card.typeLine),
+  }));
+  // Names Scryfall couldn't find still occupy slots — count them as non-land.
+  const qtyByName = new Map(parsed.entries.map((e) => [e.name.toLowerCase(), e.qty]));
+  for (const name of unresolved) {
+    resolvedEntries.push({ name, qty: qtyByName.get(name.toLowerCase()) ?? 1, isLand: false });
+  }
+
+  const result = balanceResolvedDeck(resolvedEntries, colorIdentity ?? []);
+  return c.json({ ...result, unresolved });
 });
 
 // --- Card recommendations (strategy/keyword → real Scryfall candidates) ----

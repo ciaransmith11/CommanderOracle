@@ -1,4 +1,5 @@
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
+import type { DeckBalanceResult } from '@commander-oracle/core';
 
 /** Client for the Commander Oracle backend. The frontend only ever talks here. */
 
@@ -50,6 +51,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ commander }),
     }).then(json<{ commander: Card; strategies: BuildStrategy[] }>),
+
+  /** Land-aware reconciliation of a proposed build decklist to exactly 100. */
+  reconcileBuild: (text: string, colorIdentity: string[]) =>
+    fetch('/api/build/reconcile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, colorIdentity }),
+    }).then(json<DeckBalanceResult & { unresolved: string[] }>),
 
   echo: (text: string, commander?: string) =>
     fetch('/api/echo', {

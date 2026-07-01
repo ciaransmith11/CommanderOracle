@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { parseDecklist, balanceBasicsToTarget } from '@commander-oracle/core';
+import { useEffect, useMemo, useState } from 'react';
+import type { DeckBalanceResult } from '@commander-oracle/core';
+import { api } from '../api.js';
 
 /** Pull the ```decklist fenced block (or any block of "qty name" lines) out of the message. */
 function extractDeckBlock(md: string): string | null {
@@ -9,11 +10,14 @@ function extractDeckBlock(md: string): string | null {
   return (labeled ?? looksLikeList)?.[2] ?? null;
 }
 
+type Reconciled = DeckBalanceResult & { unresolved: string[] };
+
 /**
- * Deterministic, guaranteed-100 decklist. Parses the model's decklist block,
- * counts it in code, and balances basic lands to exactly 99 + commander = 100 —
- * so the displayed deck is always the right size regardless of the model's
- * arithmetic. Renders nothing if the message has no decklist block.
+ * Deterministic, land-aware decklist. Sends the model's decklist block to the
+ * server, which resolves real card types and balances to 100 WITHOUT inflating
+ * the land count: healthy builds fill basics to exactly 99; under-filled builds
+ * are flagged (add N non-land cards) rather than padded into a mana glut, and
+ * over-filled builds are flagged (trim N) rather than gutting the lands.
  */
 export function BuildDeckPanel({
   text,
@@ -25,16 +29,45 @@ export function BuildDeckPanel({
   colorIdentity: string[];
 }) {
   const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<Reconciled | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const result = useMemo(() => {
-    const block = extractDeckBlock(text);
-    if (!block) return null;
-    const { entries } = parseDecklist(block);
-    if (entries.length === 0) return null;
-    return balanceBasicsToTarget(entries, 99, colorIdentity);
-  }, [text, colorIdentity]);
+  const block = useMemo(() => extractDeckBlock(text), [text]);
+  const ciKey = colorIdentity.join('');
 
-  if (!result) return null;
+  useEffect(() => {
+    if (!block) {
+      setResult(null);
+      return;
+    }
+    let cancelled = false;
+    setError(null);
+    setResult(null);
+    api
+      .reconcileBuild(block, ciKey ? ciKey.split('') : [])
+      .then((r) => !cancelled && setResult(r))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [block, ciKey]);
+
+  if (!block) return null;
+
+  if (error) {
+    return (
+      <div className="echo deckpanel">
+        <div className="echo__unresolved">⚠ Couldn’t verify the decklist: {error}</div>
+      </div>
+    );
+  }
+  if (!result) {
+    return (
+      <div className="echo deckpanel">
+        <div className="echo__meta">Verifying decklist…</div>
+      </div>
+    );
+  }
 
   const grand = result.total + 1; // + commander
   const decklistText =
@@ -52,24 +85,39 @@ export function BuildDeckPanel({
       <div className="echo__head">
         <span className="echo__title">Verified decklist</span>
         <span className="echo__meta">
-          <strong>{grand}</strong> cards (commander + {result.total})
+          <strong>{grand}</strong> cards ({result.nonlandCount} non-land + {result.landCount} lands + commander)
           <button className="btn-new" style={{ marginLeft: 10 }} onClick={copy}>
             {copied ? 'Copied' : 'Copy'}
           </button>
         </span>
       </div>
-      {result.adjustment !== 0 && (
-        <div className="echo__meta" style={{ marginBottom: 8 }}>
-          Adjusted basic lands by {result.adjustment > 0 ? `+${result.adjustment}` : result.adjustment} to total
-          100.
-        </div>
-      )}
-      {!result.reconciled && (
+
+      {result.overBy > 0 && (
         <div className="echo__unresolved">
-          ⚠ Couldn’t reach exactly 100 by adjusting basics alone (deck has too few basics) — currently{' '}
-          {grand}.
+          ⚠ {result.overBy} too many non-land card{result.overBy === 1 ? '' : 's'} ({result.nonlandCount} listed).
+          Cutting lands to compensate would wreck the mana base, so nothing was removed — trim {result.overBy}{' '}
+          non-land card{result.overBy === 1 ? '' : 's'} (or ask for cuts).
         </div>
       )}
+      {result.shortBy > 0 && (
+        <div className="echo__unresolved">
+          ⚠ {result.shortBy} non-land card{result.shortBy === 1 ? '' : 's'} short ({result.nonlandCount} listed).
+          Lands are held at {result.landCount} rather than padded to fill the gap — add {result.shortBy} more
+          non-land card{result.shortBy === 1 ? '' : 's'} to reach 100.
+        </div>
+      )}
+      {result.overBy === 0 && result.shortBy === 0 && !result.reconciled && (
+        <div className="echo__unresolved">
+          ⚠ {result.landCount} lands is outside the healthy 37–40 range — adjust the nonbasic lands.
+        </div>
+      )}
+
+      {result.unresolved.length > 0 && (
+        <div className="echo__meta" style={{ marginBottom: 8 }}>
+          Couldn’t verify on Scryfall (counted as non-land): {result.unresolved.join(', ')}
+        </div>
+      )}
+
       <ul className="echo__cards">
         <li className="echo__card">
           <span className="echo__qty">1×</span> {commanderName} (commander)
