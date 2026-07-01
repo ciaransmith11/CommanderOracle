@@ -15,9 +15,9 @@ const COLLECTION_ENDPOINT = 'https://api.scryfall.com/cards/collection';
 const SEARCH_ENDPOINT = 'https://api.scryfall.com/cards/search';
 const MAX_IDENTIFIERS = 75;
 // Scryfall enforces <10 req/s across the whole app and asks for a 50–100ms gap
-// between requests. 120ms (~8/s) keeps us safely under the ceiling even when an
-// analysis fires dozens of tool-driven searches back to back.
-const THROTTLE_MS = 120;
+// between requests. 150ms (~6.7/s) leaves headroom for event-loop jitter under
+// load (concurrent fetches + streaming can bunch setTimeout callbacks).
+const THROTTLE_MS = 150;
 const MAX_ATTEMPTS = 4; // retry 429 / 5xx a few times with backoff.
 
 const REQUEST_HEADERS: Record<string, string> = {
@@ -142,18 +142,27 @@ function sleep(ms: number): Promise<void> {
 // req/s limit, and the resulting 429s sink the collection lookups that back
 // hover previews (cards resolve to null → no hover image).
 
-let gate: Promise<void> = Promise.resolve();
+let chain: Promise<void> = Promise.resolve();
+// When Scryfall rate-limits us it BLOCKS for ~60s, so independent per-request
+// retries just re-trip it in a feedback loop. Instead a 429 sets a GLOBAL
+// cooldown that every queued request waits out — the whole pipeline pauses,
+// drains the penalty, and resumes together.
+let blockedUntil = 0;
 
-/** Reserve the next request slot; resolves when it is this caller's turn. */
+/** Reserve the next request slot; resolves when it is this caller's turn (past any cooldown). */
 function reserveSlot(): Promise<void> {
-  const ready = gate;
-  gate = ready.then(() => sleep(THROTTLE_MS));
-  return ready;
+  const mine = chain.then(async () => {
+    const wait = blockedUntil - Date.now();
+    if (wait > 0) await sleep(wait);
+  });
+  chain = mine.then(() => sleep(THROTTLE_MS));
+  return mine;
 }
 
 /**
- * Throttled fetch with backoff on 429 / 5xx. On persistent failure it returns
- * the final (non-OK) response so callers keep their existing error handling.
+ * Throttled fetch with backoff on 429 / 5xx. A 429 additionally arms the global
+ * cooldown so concurrent requests back off together. On persistent failure it
+ * returns the final (non-OK) response so callers keep their existing handling.
  */
 async function scryfallFetch(url: string, init?: RequestInit): Promise<Response> {
   for (let attempt = 1; ; attempt++) {
@@ -166,12 +175,31 @@ async function scryfallFetch(url: string, init?: RequestInit): Promise<Response>
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
       const retryAfter = Number(res.headers.get('retry-after'));
       const delay = Number.isFinite(retryAfter) && retryAfter > 0
-        ? Math.min(retryAfter * 1000, 4000)
-        : THROTTLE_MS * 2 ** attempt; // 240ms, 480ms, 960ms
+        ? Math.min(retryAfter * 1000, 8000)
+        : 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s
+      if (res.status === 429) blockedUntil = Date.now() + delay;
       await sleep(delay);
       continue;
     }
     return res;
+  }
+}
+
+// --- Result cache ---------------------------------------------------------
+// Card data (oracle text, legality, images) is effectively static within a
+// session, and the UI re-requests the same cards constantly (hover previews,
+// repeated tool lookups). Memoising by name / query eliminates the duplicate
+// traffic that pushes us toward the rate limit — and makes repeat hovers instant.
+const cardCache = new Map<string, Card>(); // normalized name -> card
+const searchCache = new Map<string, Card[]>(); // query key -> results
+
+/** Cache a card under its full name and (for DFCs) its front-face name. */
+function cacheCard(card: Card): void {
+  cardCache.set(normalizeName(card.name), card);
+  const front = card.name.split(' // ')[0];
+  if (front) {
+    const key = normalizeName(front);
+    if (!cardCache.has(key)) cardCache.set(key, card);
   }
 }
 
@@ -185,7 +213,20 @@ export async function fetchCollection(
   const cards: Card[] = [];
   const notFound: string[] = [];
 
-  const batches = chunk(names, MAX_IDENTIFIERS);
+  // Serve cache hits locally; only the misses (deduped) hit Scryfall.
+  const misses: string[] = [];
+  const seenMiss = new Set<string>();
+  for (const name of names) {
+    const key = normalizeName(name);
+    const cached = cardCache.get(key);
+    if (cached) cards.push(cached);
+    else if (!seenMiss.has(key)) {
+      seenMiss.add(key);
+      misses.push(name);
+    }
+  }
+
+  const batches = chunk(misses, MAX_IDENTIFIERS);
   for (let i = 0; i < batches.length; i++) {
     const identifiers = batches[i]!.map((name) => ({ name }));
     const res = await scryfallFetch(COLLECTION_ENDPOINT, {
@@ -199,7 +240,11 @@ export async function fetchCollection(
     }
 
     const json = (await res.json()) as CollectionResponse;
-    for (const raw of json.data) cards.push(normalizeCard(raw));
+    for (const raw of json.data) {
+      const card = normalizeCard(raw);
+      cacheCard(card);
+      cards.push(card);
+    }
     for (const nf of json.not_found) if (nf.name) notFound.push(nf.name);
   }
 
@@ -213,11 +258,15 @@ export async function fetchCollection(
  * need. Returns null on no/ambiguous match.
  */
 export async function namedCard(name: string): Promise<Card | null> {
+  const cached = cardCache.get(normalizeName(name));
+  if (cached) return cached;
   const res = await scryfallFetch(
     `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`,
   );
   if (!res.ok) return null;
-  return normalizeCard((await res.json()) as ScryfallCard);
+  const card = normalizeCard((await res.json()) as ScryfallCard);
+  cacheCard(card);
+  return card;
 }
 
 /**
@@ -227,11 +276,18 @@ export async function namedCard(name: string): Promise<Card | null> {
  * Ordered by EDHREC rank so the most-played matches surface first.
  */
 export async function searchCards(query: string, limit = 25): Promise<Card[]> {
+  const cacheKey = `${limit}:${query}`;
+  const hit = searchCache.get(cacheKey);
+  if (hit) return hit;
+
   const params = new URLSearchParams({ q: query, order: 'edhrec', unique: 'cards' });
   const res = await scryfallFetch(`${SEARCH_ENDPOINT}?${params.toString()}`);
   if (!res.ok) return [];
   const json = (await res.json()) as { data?: ScryfallCard[] };
-  return (json.data ?? []).slice(0, limit).map(normalizeCard);
+  const results = (json.data ?? []).slice(0, limit).map(normalizeCard);
+  for (const card of results) cacheCard(card); // repeat hovers on results are instant
+  searchCache.set(cacheKey, results);
+  return results;
 }
 
 /**
