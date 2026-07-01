@@ -248,6 +248,21 @@ export async function fetchCollection(
     for (const nf of json.not_found) if (nf.name) notFound.push(nf.name);
   }
 
+  // The collection endpoint matches a double-faced card only by its FRONT-FACE
+  // name, so a full "Front // Back" identifier lands in not_found. Recover those
+  // (and other near-misses, e.g. odd punctuation) via the forgiving fuzzy named
+  // endpoint before giving up.
+  if (notFound.length > 0) {
+    const stillMissing: string[] = [];
+    for (const name of notFound) {
+      const card = await namedCard(name);
+      if (card) cards.push(card);
+      else stillMissing.push(name);
+    }
+    notFound.length = 0;
+    notFound.push(...stillMissing);
+  }
+
   return { cards, notFound };
 }
 
