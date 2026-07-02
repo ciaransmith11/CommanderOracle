@@ -11,10 +11,13 @@ export function Header({ hasApiKey }: { hasApiKey?: boolean }) {
   return (
     <header className="header" style={style}>
       <div className="header__inner">
-        <div>
-          <h1 className="header__title">COMMANDER ORACLE</h1>
-          <div className="header__subtitle">
-            EDH Deck Advisor{hasApiKey === false ? ' · ⚠ no API key' : ''}
+        <div className="header__brand">
+          <img className="header__icon" src="/deckromancer_icon_crop.png" alt="" />
+          <div>
+            <h1 className="header__title">DECKROMANCER</h1>
+            <div className="header__subtitle">
+              EDH Deck Advisor{hasApiKey === false ? ' · ⚠ no API key' : ''}
+            </div>
           </div>
         </div>
         <HeaderPips />

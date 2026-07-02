@@ -97,7 +97,7 @@ button {
   position: relative;
   background: var(--headerBg);
   border-bottom: 3px solid var(--bronze);
-  padding: 32px 24px;
+  padding: 28px 24px;
   overflow: hidden;
 }
 /* Card artwork: a wide crop covering ~80% of the header width, anchored right,
@@ -131,6 +131,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.header__brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.header__icon {
+  height: 60px;
+  width: auto;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.55));
 }
 .header__title {
   font-family: 'Outfit', sans-serif;

@@ -297,7 +297,7 @@ if (existsSync(webDistAbs)) {
 // --- Start ----------------------------------------------------------------
 
 serve({ fetch: app.fetch, port: ENV.port }, (info) => {
-  console.log(`Commander Oracle server on http://localhost:${info.port}`);
+  console.log(`Deckromancer server on http://localhost:${info.port}`);
   console.log(`Model: ${ENV.model} | API key: ${hasApiKey() ? 'present' : 'MISSING'}`);
 });
 

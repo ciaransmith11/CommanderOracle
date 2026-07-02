@@ -680,7 +680,7 @@ function RecommendTab({ initial, sessionId, persist }: TabProps) {
             <div className="placeholder">
               <h2>Recommend cards</h2>
               <p>
-                Describe a strategy or keyword (and optionally a commander) — Commander Oracle searches live
+                Describe a strategy or keyword (and optionally a commander) — Deckromancer searches live
                 Scryfall for real matching cards, then curates them by role.
               </p>
             </div>
