@@ -1,0 +1,21 @@
+# Render Blueprint. In Render: New → Blueprint → point at this repo.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: commander-oracle
+    runtime: node
+    plan: starter # 'free' also works, but remove the `disk:` block below (free has no persistent disk → sessions reset on redeploy)
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false # set the secret in the Render dashboard
+      - key: NODE_VERSION
+        value: "24" # node:sqlite runs flag-free on Node 24
+      - key: DB_PATH
+        value: /data/commander-oracle.sqlite
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1

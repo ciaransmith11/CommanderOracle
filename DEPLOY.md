@@ -41,25 +41,36 @@ The server binds `process.env.PORT` (hosts set this automatically).
 
 ---
 
+The repo ships host config so most of this is automatic:
+- **`railway.json`** — build/start commands for Railway.
+- **`render.yaml`** — a Render Blueprint (service, env, disk, health check).
+- **`Dockerfile`** + **`.dockerignore`** — a portable image for Fly.io / any container host.
+
 ## Railway (simplest)
 1. **railway.app → New Project → Deploy from GitHub repo** → pick `CommanderOracle`.
-2. Railway auto-detects pnpm and the root `build`/`start` scripts. If you need to
-   set them explicitly: Build = `pnpm install && pnpm build`, Start = `pnpm start`.
-3. **Variables** tab → add `ANTHROPIC_API_KEY`. (PORT is injected automatically.)
-4. **Add a Volume** (persistent disk) mounted at `/data`, then add
+   Railway reads `railway.json` for the build/start commands.
+2. **Variables** tab → add `ANTHROPIC_API_KEY` and `NODE_VERSION=24`. (PORT is injected automatically.)
+3. **Add a Volume** (persistent disk) mounted at `/data`, then add
    `DB_PATH=/data/commander-oracle.sqlite`.
-5. Ensure Node 24: add a variable `NODE_VERSION=24` (Nixpacks) — the root
-   `engines` field also requests `>=22.5`.
-6. **Settings → Networking → Generate Domain** → your public URL.
+4. **Settings → Networking → Generate Domain** → your public URL.
 
 ## Render (alternative)
-1. **render.com → New → Web Service** → connect the repo.
-2. **Runtime:** Node. **Build Command:** `pnpm install && pnpm build`.
-   **Start Command:** `pnpm start`.
-3. **Environment:** add `ANTHROPIC_API_KEY`. Set Node version by committing a
-   `.node-version` file containing `24` (or an env var `NODE_VERSION=24`).
-4. **Disks:** add a disk mounted at `/data`, then set `DB_PATH=/data/commander-oracle.sqlite`.
-5. Deploy → Render gives you an `onrender.com` URL.
+1. **render.com → New → Blueprint** → point at the repo. Render reads `render.yaml`
+   (service, Node 24, `/data` disk, `DB_PATH`, `/api/health` check).
+2. Fill in the `ANTHROPIC_API_KEY` secret when prompted (it's `sync: false`).
+3. Deploy → Render gives you an `onrender.com` URL.
+   - On the **free** plan, remove the `disk:` block from `render.yaml` first (free has
+     no persistent disk; saved sessions won't survive redeploys).
+
+## Docker / Fly.io / VPS
+```sh
+docker build -t commander-oracle .
+docker run -p 8787:8787 -e ANTHROPIC_API_KEY=sk-... \
+  -v commander-data:/data -e DB_PATH=/data/commander-oracle.sqlite \
+  commander-oracle
+```
+For Fly.io: `fly launch` (it detects the Dockerfile), set the secret with
+`fly secrets set ANTHROPIC_API_KEY=...`, and add a volume mounted at `/data`.
 
 ---
 
