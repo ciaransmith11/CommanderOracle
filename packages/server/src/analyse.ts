@@ -1,12 +1,42 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
-import { SLOT_BASELINES, DESIGN_PHILOSOPHY } from '@commander-oracle/core';
+import { SLOT_BASELINES, DESIGN_PHILOSOPHY, parseDecklist } from '@commander-oracle/core';
 import { callModelJSON, streamModel, streamModelWithTools, type ModelEvent } from './anthropic.js';
 import { strategySystemBlocks, systemBlocks } from './prompt.js';
 import { CHAT_TOOLS, makeToolRunner } from './chat-tools.js';
+import { resolveEntries } from './scryfall.js';
 
 export interface BuildStrategy {
   name: string;
   description: string;
+}
+
+// A balanced deck is 99 non-commander cards = 59–62 non-land + 37–40 lands.
+const BUILD_NONLAND_MIN = 59;
+const BUILD_NONLAND_MAX = 62;
+const BUILD_NONLAND_TARGET = 61; // → 38 lands, the sweet spot
+const HAS_DECKLIST = (t: string) => (t.match(/```/g)?.length ?? 0) >= 2;
+
+/** Pull the LAST ```decklist block (or "qty name" block) — the corrected one wins if there are several. */
+function extractDeckBlock(md: string): string | null {
+  const fences = [...md.matchAll(/```([a-zA-Z]*)\s*\n([\s\S]*?)```/g)];
+  const labeled = fences.filter((f) => /deck/i.test(f[1] ?? ''));
+  const lists = fences.filter((f) => /^\s*\d+\s+\S/m.test(f[2] ?? ''));
+  return (labeled.at(-1) ?? lists.at(-1))?.[2] ?? null;
+}
+
+/** Count NON-LAND cards in a build's decklist block using real Scryfall types; null if no block. */
+async function countNonlandCards(text: string): Promise<number | null> {
+  const block = extractDeckBlock(text);
+  if (!block) return null;
+  const parsed = parseDecklist(block);
+  if (parsed.entries.length === 0) return null;
+  const { items, unresolved } = await resolveEntries(parsed.entries);
+  let nonland = 0;
+  for (const { qty, card } of items) if (!/\bLand\b/.test(card.typeLine)) nonland += qty;
+  const qtyByName = new Map(parsed.entries.map((e) => [e.name.toLowerCase(), e.qty]));
+  for (const name of unresolved) nonland += qtyByName.get(name.toLowerCase()) ?? 1; // unresolved = non-land slot
+  return nonland;
 }
 
 /** Propose distinct viable build directions for a commander (for the user to choose from). */
@@ -152,7 +182,7 @@ export function chatDeck(
  * via tools. `history` is the conversation after the build context (empty for
  * the very first build).
  */
-export function buildChat(
+export async function* buildChat(
   commander: Card,
   strategy: string,
   history: { role: 'user' | 'assistant'; content: string }[],
@@ -166,29 +196,74 @@ export function buildChat(
     'ALWAYS INCLUDE A LANDS SECTION, and keep its arithmetic INTERNALLY CONSISTENT. State the TOTAL land count T (around the 38 baseline, adjusted for the curve). Name the key nonbasic / utility lands (find them with search_cards using t:land); let N be how many nonbasics you list. The basic lands then number EXACTLY T − N, and your per-colour basic split MUST sum to T − N — NOT to T. Do the subtraction explicitly and show it, e.g. "37 lands = 15 nonbasics + 22 basics (12 Mountain, 10 Plains)". The nonbasic count plus every basic quantity MUST add up to exactly T.',
     'Beside EVERY category heading, put the number of cards you recommend for it, e.g. "## Ramp (10)" or "### Lands (38)".',
     'CRITICAL — DECK SIZE: the deck is EXACTLY 100 cards = the commander + EXACTLY 99 DISTINCT other cards. List the 99 in sections where EACH CARD APPEARS EXACTLY ONCE — place every card under its single PRIMARY role so the section counts partition the deck and sum to exactly 99. Many cards fill multiple roles; when one does, NOTE the extra role(s) inline on that card (e.g. "— also card advantage"). Do NOT list a card in a second section, and NEVER count a multi-role card more than once toward the 99. If you also give a role-COVERAGE summary, label it clearly as coverage (it may exceed the slot baselines because of overlaps) — that is NOT the deck size.',
-    'BUDGET THE 99 IN THIS ORDER — reason in exactly this sequence so you never overshoot: (1) provisionally set aside ~40 slots for lands; (2) fill the OTHER ~60 slots with the best NON-LAND cards for the strategy (creatures, ramp, card advantage, disruption, plan) — all of your card selection happens here; (3) ONLY THEN decide the deck\'s actual land count, which MUST be between 37 and 40 (38 is the sweet spot for most decks), and choose the specific lands. Because non-land cards + lands = exactly 99, a 37–40 land count means 59–62 non-land cards — do NOT exceed 62 non-land cards. Tally it, e.g. "Non-land 61 + lands 38 = 99, + commander = 100."',
+    'BUDGET THE 99 IN THIS ORDER — reason in exactly this sequence so you never overshoot: (1) provisionally set aside ~40 slots for lands; (2) fill the OTHER ~60 slots with a BALANCED, deliberately chosen set of NON-LAND cards — all card selection happens here; (3) ONLY THEN decide the actual land count, which MUST be 37–40 (38 is the sweet spot), and choose the specific lands. Because non-land + lands = exactly 99, a 37–40 land count means 59–62 non-land cards — do NOT exceed 62. Tally it, e.g. "Non-land 61 + lands 38 = 99, + commander = 100."',
+    'BALANCE THOSE ~60 NON-LAND SLOTS by role, sized to the ARCHETYPE: a creature-based or tribal deck wants a DEEP creature base (roughly 30–35 creatures); a spell-based/control deck wants fewer creatures and more instants/sorceries. Across the deck aim for ~10 ramp, ~10 card advantage, ~8–10 interaction/removal, and the remaining slots on your strategy\'s core payoffs and synergy pieces. Every non-land card must earn its slot for THIS strategy — do not pad with filler, and do not under-fill the creature base. Choose these ~60 cards deliberately so the list is already balanced and exactly the right size; you should not need anything cut afterward.',
     'Briefly note what makes this direction distinct from the popular build.',
     '\nFINAL OUTPUT — REQUIRED: after the prose, end your message with the COMPLETE decklist in a fenced code block marked ```decklist — one card per line as "<qty> <Card Name>", and NOTHING else inside the block. List every NON-LAND card and every NONBASIC land first, then fill the remaining land slots with basic lands (e.g. "20 Mountain") so the block totals EXACTLY 99 non-commander cards. IMPORTANT — the app will NOT fix your count for you: it will not cut spells if you list too many, and it will NOT pad with extra lands if you list too few (it flags the shortfall instead). So YOU must deliver exactly 99 = 59–62 non-land cards + 37–40 lands. If you are short on non-land cards, keep searching and add more real ones until you hit the count — never backfill the gap with extra basics. Count non-land + nonbasic lands + basics = 99 before you finish. Do not put the commander in the block.',
     '\nTOOLS: use `search_cards` to find REAL Commander-legal cards for each role within this strategy (colour identity is applied automatically), and `get_card` to verify a card\'s text. Recommend ONLY real cards you have looked up — never suggest a card or describe its text from memory. Make a few targeted searches per role, then write the build. Do NOT narrate or announce your searches; call the tools silently and output only the build.',
     '\nAfter the initial build, answer any follow-up questions the player asks, staying grounded in real card data via the tools.',
   ].join('\n');
 
-  // Stream the build. The count is guaranteed downstream: the client's reconcile
-  // (/api/build/reconcile → balanceResolvedDeck) always fills basics to 99 → 100.
-  //
-  // finalGuard (initial build only): the response must contain a fenced code
-  // block — the decklist. This stops the model from ending on a "let me gather a
-  // few more cards…" preamble; if it tries, it's forced to deliver the build.
-  // Follow-up turns (history present) answer questions, so no block is required.
-  const requireDecklist = history.length === 0;
-  return streamModelWithTools({
-    systemBlocks: systemBlocks(),
-    messages: [{ role: 'user', content: context }, ...history],
+  const sys = systemBlocks();
+  const runTool = makeToolRunner(commander.colorIdentity);
+  const baseMessages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: context }, ...history];
+
+  // Follow-up conversational turns: stream normally, no decklist required.
+  if (history.length > 0) {
+    yield* streamModelWithTools({ systemBlocks: sys, messages: baseMessages, tools: CHAT_TOOLS, runTool, maxTurns: 5 });
+    return;
+  }
+
+  // Initial build. finalGuard requires a decklist block so the model can't end on
+  // a "let me gather more" preamble. Stream it live and capture the text.
+  let buildText = '';
+  for await (const ev of streamModelWithTools({
+    systemBlocks: sys,
+    messages: baseMessages,
     tools: CHAT_TOOLS,
-    runTool: makeToolRunner(commander.colorIdentity),
-    // The initial build needs room: extra turns cover the "keep gathering" nudges
-    // when the model narrates instead of calling a tool.
-    maxTurns: requireDecklist ? 8 : 5,
-    finalGuard: requireDecklist ? (t) => (t.match(/```/g)?.length ?? 0) >= 2 : undefined,
+    runTool,
+    maxTurns: 8, // room for the "keep gathering" nudges
+    finalGuard: HAS_DECKLIST,
+  })) {
+    if (ev.type === 'text') buildText += ev.text;
+    yield ev;
+  }
+
+  // Verify the deck SIZE from real card data, and if it's off, have the MODEL
+  // rebalance it thoughtfully (cut the weakest / add to weak roles) rather than
+  // the app blind-cutting cards at the end and wrecking the archetype.
+  const nonland = await countNonlandCards(buildText);
+  if (nonland === null || (nonland >= BUILD_NONLAND_MIN && nonland <= BUILD_NONLAND_MAX)) return;
+
+  const over = nonland - BUILD_NONLAND_TARGET;
+  yield {
+    type: 'status',
+    text: over > 0 ? `Rebalancing — trimming ${over} of the weakest cards…` : `Rebalancing — adding ${-over} more cards…`,
+  };
+
+  const instruction =
+    over > 0
+      ? `That decklist has ${nonland} non-land cards — ${over} too many for a 100-card deck (it needs ${BUILD_NONLAND_TARGET} non-land + 38 lands). ` +
+        `Revise to EXACTLY ${BUILD_NONLAND_TARGET} non-land cards by cutting the ${over} WEAKEST or most redundant cards for THIS strategy. ` +
+        'Do NOT gut a role — keep the creature base, ramp, card advantage, interaction, and payoffs all healthy; cut low-impact filler, not staples the deck needs. '
+      : `That decklist has only ${nonland} non-land cards — add ${-over} more real, on-strategy cards (search for them) in the most under-represented roles, keeping balance. `;
+
+  const correctionMessages: Anthropic.Messages.MessageParam[] = [
+    ...baseMessages,
+    { role: 'assistant', content: buildText || '(no output)' },
+    {
+      role: 'user',
+      content:
+        instruction +
+        'Re-output the COMPLETE build ending with the full ```decklist``` code block, and briefly note what you changed and why.',
+    },
+  ];
+  yield* streamModelWithTools({
+    systemBlocks: sys,
+    messages: correctionMessages,
+    tools: CHAT_TOOLS,
+    runTool,
+    maxTurns: 5,
+    finalGuard: HAS_DECKLIST,
   });
 }

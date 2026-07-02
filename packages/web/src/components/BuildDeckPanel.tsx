@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import type { DeckBalanceResult } from '@commander-oracle/core';
 import { api } from '../api.js';
 
-/** Pull the ```decklist fenced block (or any block of "qty name" lines) out of the message. */
+/**
+ * Pull the LAST ```decklist fenced block (or "qty name" block) out of the message.
+ * The build may include a first draft followed by a rebalanced version — the last
+ * block is the corrected, final one.
+ */
 function extractDeckBlock(md: string): string | null {
   const fences = [...md.matchAll(/```([a-zA-Z]*)\s*\n([\s\S]*?)```/g)];
-  const labeled = fences.find((f) => /deck/i.test(f[1] ?? ''));
-  const looksLikeList = fences.find((f) => /^\s*\d+\s+\S/m.test(f[2] ?? ''));
-  return (labeled ?? looksLikeList)?.[2] ?? null;
+  const labeled = fences.filter((f) => /deck/i.test(f[1] ?? ''));
+  const lists = fences.filter((f) => /^\s*\d+\s+\S/m.test(f[2] ?? ''));
+  return (labeled.at(-1) ?? lists.at(-1))?.[2] ?? null;
 }
 
 type Reconciled = DeckBalanceResult & { unresolved: string[] };
