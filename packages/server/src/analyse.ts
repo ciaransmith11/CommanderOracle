@@ -173,15 +173,20 @@ export function buildChat(
     '\nAfter the initial build, answer any follow-up questions the player asks, staying grounded in real card data via the tools.',
   ].join('\n');
 
-  // Stream the build live. The count is guaranteed downstream: the client's
-  // reconcile (/api/build/reconcile → balanceResolvedDeck) always fills basics
-  // to exactly 99 → 100. The prompt drives the model toward 59–62 non-land
-  // cards so those filled lands stay healthy; if it misses, the panel flags it.
+  // Stream the build. The count is guaranteed downstream: the client's reconcile
+  // (/api/build/reconcile → balanceResolvedDeck) always fills basics to 99 → 100.
+  //
+  // finalGuard (initial build only): the response must contain a fenced code
+  // block — the decklist. This stops the model from ending on a "let me gather a
+  // few more cards…" preamble; if it tries, it's forced to deliver the build.
+  // Follow-up turns (history present) answer questions, so no block is required.
+  const requireDecklist = history.length === 0;
   return streamModelWithTools({
     systemBlocks: systemBlocks(),
     messages: [{ role: 'user', content: context }, ...history],
     tools: CHAT_TOOLS,
     runTool: makeToolRunner(commander.colorIdentity),
     maxTurns: 5,
+    finalGuard: requireDecklist ? (t) => (t.match(/```/g)?.length ?? 0) >= 2 : undefined,
   });
 }

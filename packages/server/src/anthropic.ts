@@ -100,6 +100,12 @@ export interface ToolStreamOptions extends StreamOptions {
   runTool: (name: string, input: unknown) => Promise<string>;
   /** Safety cap on tool round-trips. */
   maxTurns?: number;
+  /**
+   * Optional check for whether a produced answer is genuinely COMPLETE (vs. a
+   * "let me gather more…" preamble). When it rejects the answer, the model is
+   * forced to finish rather than have the stall surfaced as the result.
+   */
+  finalGuard?: (text: string) => boolean;
 }
 
 /** A status update describes silent background work; text is final answer content. */
@@ -214,18 +220,23 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   }
 
   // If the model answered directly without ever calling a tool, that text IS the
-  // answer — emit it (no extra model call).
-  if (!usedTools) {
+  // answer — UNLESS a finalGuard says it's just a stall/preamble (e.g. "let me
+  // gather a few more cards…" with no actual build), in which case we fall
+  // through and force a proper final answer instead of surfacing the stall.
+  if (!usedTools && (!opts.finalGuard || opts.finalGuard(lastText))) {
     if (lastText) yield { type: 'text', text: lastText };
     return;
   }
 
-  // Tools were used: force one clean final answer and stream it. Any narration
-  // the model produced mid-gather is discarded.
+  // Force one clean final answer. The nudge forbids further narration so the
+  // model can't stall with another "let me gather more" instead of delivering.
   yield { type: 'status', text: 'Writing it up…' };
   const nudge: Anthropic.Messages.TextBlockParam = {
     type: 'text',
-    text: 'Stop searching now and write your complete final response as text, using everything gathered above. Do not mention searching or your process.',
+    text:
+      'You now have everything you need — stop gathering. Write your COMPLETE final response NOW as text, using everything above. ' +
+      'Do NOT say you will search, gather, verify, or add anything more, and do NOT describe your process; produce the finished result immediately' +
+      (opts.finalGuard ? ', ending with the full ```decklist``` code block containing every non-land card.' : '.'),
   };
   const last = messages[messages.length - 1];
   if (last && last.role === 'user' && Array.isArray(last.content)) {
@@ -233,7 +244,29 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   } else {
     messages.push({ role: 'user', content: [nudge] });
   }
-  for await (const chunk of streamTurn(messages, opts, true)) yield { type: 'text', text: chunk };
+
+  // Stream the final answer live (preserves token-by-token output). Accumulate
+  // it so a guard can verify completeness afterwards.
+  let finalText = '';
+  for await (const chunk of streamTurn(messages, opts, true)) {
+    finalText += chunk;
+    yield { type: 'text', text: chunk };
+  }
+
+  // If a guard is set (build) and the model STILL stalled without delivering,
+  // retry once with a blunt nudge and stream the real result — so a build can
+  // never END on a "let me gather more" message.
+  if (opts.finalGuard && !opts.finalGuard(finalText)) {
+    messages.push({ role: 'assistant', content: finalText || '(no output)' });
+    messages.push({
+      role: 'user',
+      content:
+        'That was not a complete build. Output ONLY the finished build now, ending with the ```decklist``` code block ' +
+        'listing every non-land card as "<qty> <name>". No preamble, no promises to search — the full list, now.',
+    });
+    yield { type: 'status', text: 'Finishing the build…' };
+    for await (const chunk of streamTurn(messages, opts, true)) yield { type: 'text', text: chunk };
+  }
 }
 
 /**
