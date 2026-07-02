@@ -186,7 +186,9 @@ export function buildChat(
     messages: [{ role: 'user', content: context }, ...history],
     tools: CHAT_TOOLS,
     runTool: makeToolRunner(commander.colorIdentity),
-    maxTurns: 5,
+    // The initial build needs room: extra turns cover the "keep gathering" nudges
+    // when the model narrates instead of calling a tool.
+    maxTurns: requireDecklist ? 8 : 5,
     finalGuard: requireDecklist ? (t) => (t.match(/```/g)?.length ?? 0) >= 2 : undefined,
   });
 }

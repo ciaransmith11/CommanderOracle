@@ -192,31 +192,45 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   let usedTools = false;
   let lastText = '';
 
-  // Gather phase — silent except for live status updates. Keep letting the model
-  // call tools until it stops.
+  // Gather phase — silent except for live status updates.
   for (let turn = 0; turn < maxToolTurns; turn++) {
     const { text, message } = await runTurnSilently(messages, opts);
     lastText = text;
     messages.push({ role: 'assistant', content: message.content as unknown as Anthropic.Messages.ContentBlockParam[] });
 
-    if (message.stop_reason !== 'tool_use') break;
-    usedTools = true;
+    if (message.stop_reason === 'tool_use') {
+      usedTools = true;
+      yield { type: 'status', text: describeToolBatch(message.content) };
 
-    yield { type: 'status', text: describeToolBatch(message.content) };
-
-    const toolResults: Anthropic.Messages.ContentBlockParam[] = [];
-    for (const block of message.content) {
-      if (block.type === 'tool_use') {
-        let result: string;
-        try {
-          result = await opts.runTool(block.name, block.input);
-        } catch (err) {
-          result = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+      const toolResults: Anthropic.Messages.ContentBlockParam[] = [];
+      for (const block of message.content) {
+        if (block.type === 'tool_use') {
+          let result: string;
+          try {
+            result = await opts.runTool(block.name, block.input);
+          } catch (err) {
+            result = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+          }
+          toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
         }
-        toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
       }
+      messages.push({ role: 'user', content: toolResults });
+      continue;
     }
-    messages.push({ role: 'user', content: toolResults });
+
+    // Text-only turn. If it's an acceptable/complete answer, stop gathering.
+    if (!opts.finalGuard || opts.finalGuard(text)) break;
+
+    // The model narrated ("I need to look up a few more cards…") but produced no
+    // build. Forcing a write now just makes it refuse — so tell it to actually
+    // CALL the tools and keep gathering (tools stay available next turn).
+    yield { type: 'status', text: 'Gathering the last cards…' };
+    messages.push({
+      role: 'user',
+      content:
+        'Do not describe what you are about to do. If you still need cards, CALL search_cards / get_card NOW to fetch them. ' +
+        'As soon as you have enough, output the COMPLETE build ending with the ```decklist``` code block — do not ask to look up more after that.',
+    });
   }
 
   // If the model answered directly without ever calling a tool, that text IS the
@@ -234,8 +248,8 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   const nudge: Anthropic.Messages.TextBlockParam = {
     type: 'text',
     text:
-      'You now have everything you need — stop gathering. Write your COMPLETE final response NOW as text, using everything above. ' +
-      'Do NOT say you will search, gather, verify, or add anything more, and do NOT describe your process; produce the finished result immediately' +
+      'Every card you have already looked up via the tools is verified — you have enough. Do NOT look up, verify, or gather anything more. ' +
+      'Write your COMPLETE final response NOW using what you have, and do NOT describe your process' +
       (opts.finalGuard ? ', ending with the full ```decklist``` code block containing every non-land card.' : '.'),
   };
   const last = messages[messages.length - 1];
