@@ -1,4 +1,7 @@
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
@@ -268,6 +271,28 @@ app.delete('/api/sessions/:id', (c) => {
   sessions.remove(c.req.param('id'));
   return c.json({ ok: true });
 });
+
+// --- Static frontend (production) -----------------------------------------
+// In production this same server also serves the built React app, so the API
+// stays same-origin (no CORS/base-URL juggling). In dev the dist folder doesn't
+// exist — Vite serves the frontend on :5173 and proxies /api here — so this
+// block is skipped. `serveStatic` root is RELATIVE to cwd (absolute unsupported);
+// the documented start command runs from packages/server, so ../web/dist is the
+// built frontend. Override with WEB_DIST if you run it from elsewhere.
+const WEB_DIST_REL = process.env.WEB_DIST ?? '../web/dist';
+const webDistAbs = resolve(process.cwd(), WEB_DIST_REL);
+
+if (existsSync(webDistAbs)) {
+  const indexHtml = readFileSync(resolve(webDistAbs, 'index.html'), 'utf8');
+  // Serve real files (hashed JS/CSS, images). Registered AFTER the /api routes,
+  // so those take precedence; only non-API paths reach here.
+  app.use('/*', serveStatic({ root: WEB_DIST_REL }));
+  // SPA fallback: any other GET returns index.html; unknown /api paths 404 JSON.
+  app.get('*', (c) =>
+    c.req.path.startsWith('/api') ? c.json({ error: 'not found' }, 404) : c.html(indexHtml),
+  );
+  console.log(`Serving frontend from ${webDistAbs}`);
+}
 
 // --- Start ----------------------------------------------------------------
 
