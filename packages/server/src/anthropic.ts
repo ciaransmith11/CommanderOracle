@@ -111,6 +111,16 @@ export interface ToolStreamOptions extends StreamOptions {
 /** A status update describes silent background work; text is final answer content. */
 export type ModelEvent = { type: 'status'; text: string } | { type: 'text'; text: string };
 
+// Detects a "let me go do something" preamble — the model announcing it will
+// search/find/look up cards but ending its turn WITHOUT calling the tool. We look
+// only at the tail (a real answer ends with content, not with intent-to-act).
+const STALL_RE =
+  /\b(let me|i'?ll|i will|let'?s|i'?m going to|now,? i'?ll|allow me to)\b[^.?!\n]{0,90}\b(search|find|look up|look for|gather|pull up|fetch|verify|get you|dig up|source|track down|identify)\b/i;
+
+function looksLikeToolPreamble(text: string): boolean {
+  return STALL_RE.test(text.trim().slice(-240));
+}
+
 /** A short human label for what a turn's tool calls are doing (shown live in the UI). */
 function describeToolBatch(blocks: Anthropic.Messages.ContentBlock[]): string {
   const toolUses = blocks.filter((b): b is Anthropic.Messages.ToolUseBlock => b.type === 'tool_use');
@@ -187,7 +197,7 @@ async function runTurnSilently(
  */
 export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGenerator<ModelEvent> {
   const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
-  const maxToolTurns = opts.maxTurns ?? 4;
+  const maxToolTurns = opts.maxTurns ?? 6;
 
   let usedTools = false;
   let lastText = '';
@@ -218,26 +228,28 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
       continue;
     }
 
-    // Text-only turn. If it's an acceptable/complete answer, stop gathering.
-    if (!opts.finalGuard || opts.finalGuard(text)) break;
+    // Text-only turn. It's a genuine final answer UNLESS it's a stall — the model
+    // narrating that it will look up cards but ending the turn without doing so
+    // ("Let me find real cards…") — or a finalGuard says it's incomplete.
+    const stalled = looksLikeToolPreamble(text);
+    const incomplete = opts.finalGuard ? !opts.finalGuard(text) : false;
+    if (!stalled && !incomplete) break;
 
-    // The model narrated ("I need to look up a few more cards…") but produced no
-    // build. Forcing a write now just makes it refuse — so tell it to actually
-    // CALL the tools and keep gathering (tools stay available next turn).
-    yield { type: 'status', text: 'Gathering the last cards…' };
+    // Don't surface the preamble. Tell the model to actually CALL the tools now
+    // and keep going (tools stay available next turn).
+    yield { type: 'status', text: 'Looking up cards…' };
     messages.push({
       role: 'user',
       content:
-        'Do not describe what you are about to do. If you still need cards, CALL search_cards / get_card NOW to fetch them. ' +
-        'As soon as you have enough, output the COMPLETE build ending with the ```decklist``` code block — do not ask to look up more after that.',
+        'Do not describe what you are about to do. If you need card data, CALL search_cards / get_card NOW to fetch it, then give your COMPLETE answer' +
+        (opts.finalGuard ? ', ending with the full ```decklist``` code block — do not ask to look up more after that.' : '.'),
     });
   }
 
   // If the model answered directly without ever calling a tool, that text IS the
-  // answer — UNLESS a finalGuard says it's just a stall/preamble (e.g. "let me
-  // gather a few more cards…" with no actual build), in which case we fall
-  // through and force a proper final answer instead of surfacing the stall.
-  if (!usedTools && (!opts.finalGuard || opts.finalGuard(lastText))) {
+  // answer — UNLESS it's a stall preamble, or a finalGuard says it's incomplete,
+  // in which case we fall through and force a proper final answer.
+  if (!usedTools && !looksLikeToolPreamble(lastText) && (!opts.finalGuard || opts.finalGuard(lastText))) {
     if (lastText) yield { type: 'text', text: lastText };
     return;
   }
