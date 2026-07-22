@@ -15,6 +15,7 @@ export function rulesChat(
     messages: history,
     tools: CHAT_TOOLS,
     runTool: makeToolRunner([]),
-    maxTurns: 4,
+    // Room for multi-card questions plus any "actually call the tool" nudges.
+    maxTurns: 6,
   });
 }

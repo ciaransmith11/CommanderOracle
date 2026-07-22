@@ -260,9 +260,9 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   const nudge: Anthropic.Messages.TextBlockParam = {
     type: 'text',
     text:
-      'Every card you have already looked up via the tools is verified — you have enough. Do NOT look up, verify, or gather anything more. ' +
-      'Write your COMPLETE final response NOW using what you have, and do NOT describe your process' +
-      (opts.finalGuard ? ', ending with the full ```decklist``` code block containing every non-land card.' : '.'),
+      'You have the card details you need. Now write your COMPLETE final answer as text, drawing on everything above — ' +
+      'answer directly, without narrating your process or announcing further lookups' +
+      (opts.finalGuard ? ', and end with the full ```decklist``` code block containing every non-land card.' : '.'),
   };
   const last = messages[messages.length - 1];
   if (last && last.role === 'user' && Array.isArray(last.content)) {
