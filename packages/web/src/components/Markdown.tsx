@@ -2,6 +2,7 @@ import { marked } from 'marked';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Card } from '@commander-oracle/shared';
 import { api } from '../api.js';
+import { CardPreview, faceUrls, placePreview } from './cardPreview.js';
 
 marked.setOptions({ gfm: true, breaks: false });
 
@@ -26,20 +27,19 @@ function escapeRe(s: string): string {
 }
 
 /**
- * Index a card into a name→image map: by full name, by front-face name, and by
- * EACH face name (mapped to that face's image), so a double-faced card can be
- * hovered by either face name to show that face.
+ * Index a card by every name it can be referenced by (full name, front-face name,
+ * and each face name) → the image(s) to preview. For a double-faced card that's
+ * BOTH faces (pipe-joined), so hovering any of its names shows the correct face.
  */
 function indexCard(map: Map<string, string | null>, card: Card): void {
-  map.set(normKey(card.name), card.imageUrl);
+  const imgs = faceUrls(card).join('|') || null;
+  map.set(normKey(card.name), imgs);
   const front = card.name.split(' // ')[0];
   if (front) {
     const k = normKey(front);
-    if (!map.has(k)) map.set(k, card.imageUrl);
+    if (!map.has(k)) map.set(k, imgs);
   }
-  for (const face of card.faces ?? []) {
-    map.set(normKey(face.name), face.imageUrl ?? card.imageUrl);
-  }
+  for (const face of card.faces ?? []) map.set(normKey(face.name), imgs);
 }
 
 // Session-wide cache of name→image for names NOT in a known deck list
@@ -117,10 +117,11 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
     };
     for (const c of cards ?? []) {
       if (BASIC_NAMES.has(c.name)) continue;
-      add(c.name, c.imageUrl);
+      const imgs = faceUrls(c).join('|') || null; // BOTH faces for a DFC
+      add(c.name, imgs);
       const front = c.name.split(' // ')[0];
-      if (front && front !== c.name) add(front, c.imageUrl);
-      for (const f of c.faces ?? []) add(f.name, f.imageUrl ?? c.imageUrl);
+      if (front && front !== c.name) add(front, imgs);
+      for (const f of c.faces ?? []) add(f.name, imgs);
     }
     return { knownImg: img, knownNames: names };
   }, [cards]);
@@ -189,11 +190,14 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
     if (!el) return;
     function onOver(e: MouseEvent) {
       const hit = (e.target as HTMLElement).closest('[data-img]') as HTMLElement | null;
-      if (hit?.dataset.img) setPreview({ url: hit.dataset.img, x: pos.current.x + 16, y: pos.current.y + 16 });
+      if (hit?.dataset.img) {
+        const url = hit.dataset.img;
+        setPreview({ url, ...placePreview(pos.current.x, pos.current.y, url.split('|').length) });
+      }
     }
     function onMove(e: MouseEvent) {
       pos.current = { x: e.clientX, y: e.clientY };
-      setPreview((p) => (p ? { ...p, x: e.clientX + 16, y: e.clientY + 16 } : p));
+      setPreview((p) => (p ? { ...p, ...placePreview(e.clientX, e.clientY, p.url.split('|').length) } : p));
     }
     function onOut(e: MouseEvent) {
       if ((e.target as HTMLElement).closest('[data-img]')) setPreview(null);
@@ -215,14 +219,7 @@ export function Markdown({ text, streaming, cards }: { text: string; streaming?:
         className={`md${streaming ? ' cursor' : ''}`}
         dangerouslySetInnerHTML={{ __html: html }}
       />
-      {preview && (
-        <img
-          className="cardname__preview"
-          src={preview.url}
-          alt=""
-          style={{ left: preview.x, top: preview.y }}
-        />
-      )}
+      {preview && <CardPreview urls={preview.url.split('|')} x={preview.x} y={preview.y} />}
     </>
   );
 }

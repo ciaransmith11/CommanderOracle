@@ -369,7 +369,7 @@ button {
   padding: 24px;
 }
 .thread {
-  max-width: 820px;
+  max-width: 1000px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -398,7 +398,7 @@ button {
 }
 
 .placeholder {
-  max-width: 820px;
+  max-width: 1000px;
   margin: 40px auto;
   text-align: center;
   color: var(--inkMute);
@@ -417,7 +417,7 @@ button {
   padding: 14px 24px;
 }
 .composer__inner {
-  max-width: 820px;
+  max-width: 1000px;
   margin: 0 auto;
   display: flex;
   gap: 10px;
@@ -456,7 +456,7 @@ button {
   cursor: not-allowed;
 }
 .composer__hint {
-  max-width: 820px;
+  max-width: 1000px;
   margin: 6px auto 0;
   font-size: 11px;
   color: var(--inkMute);
@@ -464,7 +464,7 @@ button {
 .composer__row {
   display: flex;
   gap: 10px;
-  max-width: 820px;
+  max-width: 1000px;
   margin: 0 auto 8px;
 }
 
@@ -599,13 +599,23 @@ button {
 .cardname:hover {
   border-bottom-style: solid;
 }
-.cardname__preview {
+/* Hover preview — a row of face images (two, side by side, for a DFC). Position
+   is set inline by placePreview() so it never runs off-screen. */
+.cardpreview {
   position: fixed;
   z-index: 50;
+  display: flex;
+  gap: 6px;
+  pointer-events: none;
+}
+.cardpreview img {
   width: 220px;
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-  pointer-events: none;
+  display: block;
+}
+.cardpreview--multi img {
+  width: 188px;
 }
 
 /* --- Rendered analysis (markdown) ---------------------------------------- */
@@ -662,14 +672,18 @@ button {
 .md {
   overflow-wrap: anywhere;
 }
-/* Wide tables scroll inside the bubble instead of spilling past its edge. */
+/* Size each column to its content (no column starves another). The table only
+   grows to what its content needs; if that still exceeds the bubble it scrolls
+   horizontally rather than squishing columns. */
 .md table {
   border-collapse: collapse;
-  width: 100%;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  table-layout: auto;
   font-size: 13px;
   margin: 10px 0;
-  display: block;
-  overflow-x: auto;
 }
 .md th,
 .md td {
@@ -677,11 +691,14 @@ button {
   padding: 7px 14px;
   text-align: left;
   vertical-align: top;
-  /* Cells wrap on whole words only — never break a card name mid-word. */
+  /* Wrap on whole words only — never break a card name mid-word. */
   overflow-wrap: normal;
   word-break: normal;
+  /* Prose/notes columns wrap at this width instead of ballooning and squeezing
+     the short columns; content narrower than this just sizes to its content. */
+  max-width: 460px;
 }
-/* Keep the card-name column on a single line; let the notes column wrap. */
+/* Keep the card-name column on a single line so names stay readable. */
 .md td:first-child,
 .md th:first-child {
   white-space: nowrap;
