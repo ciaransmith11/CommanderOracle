@@ -389,6 +389,23 @@ type BuildMsg = { role: 'user' | 'assistant'; content: string };
 
 type SetMode = 'none' | 'mostly' | 'only';
 
+/**
+ * Hide the machine-readable ```decklist code block from the DISPLAYED build. The
+ * Verified decklist panel already shows that list, so rendering it raw just
+ * repeats every card as monospace text. The panel still parses the untouched content.
+ */
+function stripDeckBlock(md: string): string {
+  return md
+    // Complete fenced blocks that are the decklist (labeled, or a body of "qty name" lines).
+    .replace(/```([a-zA-Z]*)\s*\n([\s\S]*?)```/g, (block, lang: string, body: string) =>
+      /deck/i.test(lang) || /^\s*\d+\s+\S/m.test(body) ? '' : block,
+    )
+    // A still-streaming, not-yet-closed decklist fence at the very end.
+    .replace(/```[a-zA-Z]*\s*\n(?:\s*\d+\s+.*\n?)*$/, '')
+    .replace(/```decklist[\s\S]*$/i, '')
+    .trimEnd();
+}
+
 interface BuildState {
   commander: string;
   commanderCard: Card | null;
@@ -579,7 +596,7 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
               m.role === 'assistant' ? (
                 <div key={i}>
                   <div className="bubble bubble--assistant">
-                    <Markdown text={m.content} />
+                    <Markdown text={stripDeckBlock(m.content)} />
                   </div>
                   <BuildDeckPanel
                     text={m.content}
@@ -598,7 +615,7 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
           )}
           {streaming && (
             <div className="bubble bubble--assistant">
-              <Markdown text={streaming} streaming />
+              <Markdown text={stripDeckBlock(streaming)} streaming />
             </div>
           )}
           {chosen && !busy && strategies && (
