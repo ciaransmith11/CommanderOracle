@@ -63,7 +63,7 @@ export async function proposeStrategies(commander: Card): Promise<BuildStrategy[
  * to recompute it.
  */
 
-function cardLine(qty: number, card: Card): string {
+function cardLine(qty: number, card: Card, set?: string): string {
   const ci = card.colorIdentity.length ? card.colorIdentity.join('') : 'C';
   const rank = card.edhrecRank != null ? `#${card.edhrecRank}` : 'unranked';
   const price = card.priceUsd != null ? `$${card.priceUsd.toFixed(2)}` : 'n/a';
@@ -75,6 +75,9 @@ function cardLine(qty: number, card: Card): string {
     `CI:${ci}`,
     `EDHREC:${rank}`,
     price,
+    // The set the user explicitly listed this card from, so the model can act on
+    // "cut cards from <set>" style requests.
+    set ? `SET:${set}` : '',
     oracle ? `:: ${oracle}` : '',
   ]
     .filter(Boolean)
@@ -96,7 +99,7 @@ export function renderDeckForModel(deck: CategorizedDeck): string {
 
   for (const section of deck.sections) {
     lines.push(`## ${section.section} (${section.count})`);
-    for (const { qty, card } of section.cards) lines.push(cardLine(qty, card));
+    for (const { qty, card, requestedSet } of section.cards) lines.push(cardLine(qty, card, requestedSet));
     lines.push('');
   }
 

@@ -23,20 +23,20 @@ describe('parseDecklist — quantity formats', () => {
 });
 
 describe('parseDecklist — set-code and collector suffixes', () => {
-  it('strips "(SET) collector" suffixes', () => {
+  it('strips "(SET) collector" from the name and captures the set code', () => {
     const { entries } = parseDecklist('1 Sol Ring (C21) 263');
-    expect(entries).toEqual([{ qty: 1, name: 'Sol Ring' }]);
+    expect(entries).toEqual([{ qty: 1, name: 'Sol Ring', set: 'C21' }]);
   });
 
-  it('strips a bare "(SET)" suffix', () => {
+  it('captures a bare "(SET)" suffix', () => {
     const { entries } = parseDecklist('1 Cultivate (M21)');
-    expect(entries).toEqual([{ qty: 1, name: 'Cultivate' }]);
+    expect(entries).toEqual([{ qty: 1, name: 'Cultivate', set: 'M21' }]);
   });
 
   it('strips trailing foil markers, alone or after a collector number', () => {
     const { entries } = parseDecklist('1 Sol Ring (C21) 263 *F*\n1 Mana Crypt *F*');
     expect(entries).toEqual([
-      { qty: 1, name: 'Sol Ring' },
+      { qty: 1, name: 'Sol Ring', set: 'C21' },
       { qty: 1, name: 'Mana Crypt' },
     ]);
   });

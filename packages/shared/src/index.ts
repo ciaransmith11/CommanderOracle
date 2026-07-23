@@ -10,6 +10,8 @@
 export interface CardEntry {
   qty: number;
   name: string;
+  /** Set code the user typed after the name, e.g. "C21" — used to resolve that exact printing. */
+  set?: string;
 }
 
 /** Output of the pure decklist parser. */
@@ -45,6 +47,9 @@ export interface Card {
   priceUsd: number | null;
   imageUrl: string | null;
   scryfallUri: string | null;
+  /** Set code (e.g. "LTC") and full set name of the resolved printing, from Scryfall. */
+  set?: string;
+  setName?: string;
   /** Present for double-faced / split cards (2+ named faces), each with its image. */
   faces?: CardFace[];
 }
@@ -66,6 +71,8 @@ export type Section =
 export interface CategorizedCard {
   qty: number;
   card: Card;
+  /** The set code the user typed for this line (if any) — shown in the echo and given to the model. */
+  requestedSet?: string;
 }
 
 export interface DeckSection {

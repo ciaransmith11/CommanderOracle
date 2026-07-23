@@ -582,6 +582,19 @@ button {
   color: var(--inkMute);
   font-variant-numeric: tabular-nums;
 }
+/* Set-code badge — only shown when the user typed a set code for that card. */
+.echo__set {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--inkMute);
+  background: var(--bronzePale);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 5px;
+  vertical-align: middle;
+}
 .echo__unresolved {
   margin-top: 8px;
   font-size: 12px;

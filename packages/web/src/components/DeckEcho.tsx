@@ -29,9 +29,10 @@ export function DeckEcho({ deck }: { deck: CategorizedDeck }) {
 
       {deck.sections.map((section) => (
         <Section key={section.section} title={section.section} count={section.count}>
-          {section.cards.map(({ qty, card }) => (
+          {section.cards.map(({ qty, card, requestedSet }) => (
             <li className="echo__card" key={card.name}>
               <span className="echo__qty">{qty}×</span> <CardName card={card} />
+              {requestedSet && <span className="echo__set">{requestedSet}</span>}
             </li>
           ))}
         </Section>

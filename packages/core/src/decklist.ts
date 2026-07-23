@@ -56,6 +56,7 @@ interface ParsedLine {
   qty: number;
   name: string;
   isCommander: boolean;
+  set?: string;
 }
 
 export function parseDecklist(text: string): ParsedDecklist {
@@ -88,7 +89,7 @@ export function parseDecklist(text: string): ParsedDecklist {
       // Commander copies are always singletons; quantity is irrelevant.
       if (!commanders.includes(parsed.name)) commanders.push(parsed.name);
     } else {
-      mergeEntry(entries, parsed.qty, parsed.name);
+      mergeEntry(entries, parsed.qty, parsed.name, parsed.set);
     }
   }
 
@@ -131,17 +132,23 @@ function parseCardLine(line: string): ParsedLine | null {
   // 4. Set-code + collector suffix: " (C21) 263", " (MH2)", " (2X2) 12p".
   //    The set code is short and space-free, so this won't touch names whose
   //    own parenthetical contains spaces (e.g. "B.F.M. (Big Furry Monster)").
-  s = s.replace(/\s+\([0-9A-Za-z]{1,6}\)(?:\s+[0-9A-Za-z★]+)?\s*$/, '');
+  //    We CAPTURE the set code (to resolve that exact printing) before stripping.
+  let set: string | undefined;
+  const setMatch = s.match(/\s+\(([0-9A-Za-z]{1,6})\)(?:\s+[0-9A-Za-z★]+)?\s*$/);
+  if (setMatch) {
+    set = setMatch[1]!.toUpperCase();
+    s = s.slice(0, setMatch.index).trim();
+  }
 
   s = s.trim();
   if (!s || qty <= 0) return null;
 
-  return { qty, name: s, isCommander };
+  return { qty, name: s, isCommander, set };
 }
 
-/** Merge a card into the list, summing quantities for duplicate names. */
-function mergeEntry(entries: CardEntry[], qty: number, name: string): void {
+/** Merge a card into the list, summing quantities for duplicate names (keeping the first set code seen). */
+function mergeEntry(entries: CardEntry[], qty: number, name: string, set?: string): void {
   const existing = entries.find((e) => e.name.toLowerCase() === name.toLowerCase());
   if (existing) existing.qty += qty;
-  else entries.push({ qty, name });
+  else entries.push({ qty, name, ...(set ? { set } : {}) });
 }

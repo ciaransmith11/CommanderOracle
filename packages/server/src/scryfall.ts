@@ -46,6 +46,8 @@ interface ScryfallCard {
   oracle_text?: string;
   legalities?: Record<string, string>;
   edhrec_rank?: number;
+  set?: string;
+  set_name?: string;
   prices?: { usd?: string | null; usd_foil?: string | null };
   image_uris?: { normal?: string };
   scryfall_uri?: string;
@@ -118,6 +120,8 @@ export function normalizeCard(c: ScryfallCard): Card {
     priceUsd: parsePrice(c.prices?.usd) ?? parsePrice(c.prices?.usd_foil),
     imageUrl,
     scryfallUri: c.scryfall_uri ?? null,
+    set: c.set ? c.set.toUpperCase() : undefined,
+    setName: c.set_name,
     faces,
   };
 }
@@ -193,42 +197,67 @@ async function scryfallFetch(url: string, init?: RequestInit): Promise<Response>
 const cardCache = new Map<string, Card>(); // normalized name -> card
 const searchCache = new Map<string, Card[]>(); // query key -> results
 
-/** Cache a card under its full name and (for DFCs) its front-face name. */
+/** Cache key: name alone, or name qualified by set code for a specific printing. */
+function cacheKey(name: string, set?: string): string {
+  const base = normalizeName(name);
+  return set ? `${base}|${set.toLowerCase()}` : base;
+}
+
+/** Cache a card under its full name (and front-face name), plus set-qualified keys. */
 function cacheCard(card: Card): void {
   cardCache.set(normalizeName(card.name), card);
+  if (card.set) cardCache.set(cacheKey(card.name, card.set), card);
   const front = card.name.split(' // ')[0];
   if (front) {
     const key = normalizeName(front);
     if (!cardCache.has(key)) cardCache.set(key, card);
+    if (card.set) {
+      const sk = cacheKey(front, card.set);
+      if (!cardCache.has(sk)) cardCache.set(sk, card);
+    }
   }
 }
 
+/** A card to fetch: by name, optionally pinned to a specific set (printing). */
+export interface CardIdentifier {
+  name: string;
+  set?: string;
+}
+
+/** Fetch cards by name via the collection endpoint. */
+export async function fetchCollection(names: string[]): Promise<{ cards: Card[]; notFound: string[] }> {
+  return fetchCollectionBy(names.map((name) => ({ name })));
+}
+
 /**
- * Fetch cards by name via the collection endpoint. Returns normalized cards and
- * the names Scryfall could not resolve.
+ * Fetch cards by (name, optional set) via the collection endpoint — honouring a
+ * requested printing when a set code is given. Returns normalized cards and the
+ * names Scryfall could not resolve.
  */
-export async function fetchCollection(
-  names: string[],
+export async function fetchCollectionBy(
+  ids: CardIdentifier[],
 ): Promise<{ cards: Card[]; notFound: string[] }> {
   const cards: Card[] = [];
   const notFound: string[] = [];
 
-  // Serve cache hits locally; only the misses (deduped) hit Scryfall.
-  const misses: string[] = [];
+  // Serve cache hits locally; only the misses (deduped by name+set) hit Scryfall.
+  const misses: CardIdentifier[] = [];
   const seenMiss = new Set<string>();
-  for (const name of names) {
-    const key = normalizeName(name);
+  for (const id of ids) {
+    const key = cacheKey(id.name, id.set);
     const cached = cardCache.get(key);
     if (cached) cards.push(cached);
     else if (!seenMiss.has(key)) {
       seenMiss.add(key);
-      misses.push(name);
+      misses.push(id);
     }
   }
 
   const batches = chunk(misses, MAX_IDENTIFIERS);
-  for (let i = 0; i < batches.length; i++) {
-    const identifiers = batches[i]!.map((name) => ({ name }));
+  for (const batch of batches) {
+    const identifiers = batch.map((id) =>
+      id.set ? { name: id.name, set: id.set.toLowerCase() } : { name: id.name },
+    );
     const res = await scryfallFetch(COLLECTION_ENDPOINT, {
       method: 'POST',
       body: JSON.stringify({ identifiers }),
@@ -347,7 +376,8 @@ export async function resolveEntries(
   }
 
   if (toFetch.length > 0) {
-    const { cards, notFound } = await fetchCollection(toFetch.map((e) => e.name));
+    // Honour the typed set code (if any) so the resolved printing matches the copy the user listed.
+    const { cards } = await fetchCollectionBy(toFetch.map((e) => ({ name: e.name, set: e.set })));
 
     // Index results by normalized full name, and by the front-face name for
     // double-faced cards (so "Valki" matches "Valki, God of Lies // Tibalt...").
@@ -361,11 +391,9 @@ export async function resolveEntries(
       }
     }
 
-    const notFoundSet = new Set(notFound.map(normalizeName));
     for (const entry of toFetch) {
       const card = byName.get(normalizeName(entry.name));
-      if (card) items.push({ qty: entry.qty, card });
-      else if (notFoundSet.has(normalizeName(entry.name))) unresolved.push(entry.name);
+      if (card) items.push({ qty: entry.qty, card, ...(entry.set ? { requestedSet: entry.set } : {}) });
       else unresolved.push(entry.name);
     }
   }
