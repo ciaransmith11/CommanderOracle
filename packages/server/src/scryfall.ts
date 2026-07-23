@@ -352,6 +352,63 @@ export async function autocompleteCommanders(query: string): Promise<string[]> {
     .slice(0, 8);
 }
 
+// --- Sets -----------------------------------------------------------------
+// Scryfall has no set-search endpoint, so we fetch the full set list once and
+// cache it (it changes rarely) to power name/code type-ahead and resolution.
+
+interface ScryfallSet {
+  code: string;
+  name: string;
+  released_at?: string;
+}
+
+let allSetsCache: { code: string; name: string; released_at?: string }[] | null = null;
+
+async function getAllSets(): Promise<{ code: string; name: string; released_at?: string }[]> {
+  if (allSetsCache) return allSetsCache;
+  const res = await scryfallFetch('https://api.scryfall.com/sets');
+  if (!res.ok) return [];
+  const json = (await res.json()) as { data?: ScryfallSet[] };
+  allSetsCache = (json.data ?? []).map((s) => ({ code: s.code, name: s.name, released_at: s.released_at }));
+  return allSetsCache;
+}
+
+/** Type-ahead: sets whose name or code matches the query, best matches first. */
+export async function searchSets(query: string): Promise<{ code: string; name: string }[]> {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  const sets = await getAllSets();
+  return sets
+    .map((s) => {
+      const name = s.name.toLowerCase();
+      const code = s.code.toLowerCase();
+      let score = -1;
+      if (code === q) score = 100;
+      else if (name === q) score = 90;
+      else if (name.startsWith(q)) score = 70;
+      else if (code.startsWith(q)) score = 60;
+      else if (name.includes(q)) score = 40;
+      else if (code.includes(q)) score = 20;
+      return { s, score };
+    })
+    .filter((x) => x.score >= 0)
+    .sort((a, b) => b.score - a.score || (b.s.released_at ?? '').localeCompare(a.s.released_at ?? ''))
+    .slice(0, 8)
+    .map((x) => ({ code: x.s.code.toUpperCase(), name: x.s.name }));
+}
+
+/** Resolve a typed set NAME or CODE to its canonical { code, name }; null if unknown. */
+export async function resolveSet(input: string): Promise<{ code: string; name: string } | null> {
+  const q = input.trim().toLowerCase();
+  if (!q) return null;
+  const sets = await getAllSets();
+  const hit =
+    sets.find((s) => s.code.toLowerCase() === q) ??
+    sets.find((s) => s.name.toLowerCase() === q) ??
+    sets.find((s) => s.name.toLowerCase().startsWith(q));
+  return hit ? { code: hit.code.toUpperCase(), name: hit.name } : null;
+}
+
 /**
  * Resolve parsed decklist entries to `{ qty, card }` items, preserving entry
  * order. Basic lands are synthesized locally; everything else is fetched.

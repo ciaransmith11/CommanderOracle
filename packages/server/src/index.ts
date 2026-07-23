@@ -9,7 +9,7 @@ import { balanceResolvedDeck, categorise, parseDecklist } from '@commander-oracl
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
-import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries } from './scryfall.js';
+import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries, resolveSet, searchSets } from './scryfall.js';
 import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
 import { rulesChat } from './rules.js';
 import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
@@ -49,6 +49,12 @@ app.get('/api/card', async (c) => {
 app.get('/api/autocomplete', async (c) => {
   const names = await autocompleteCommanders(c.req.query('q') ?? '');
   return c.json({ names });
+});
+
+// Set name/code type-ahead suggestions for the build set-constraint control.
+app.get('/api/sets', async (c) => {
+  const sets = await searchSets(c.req.query('q') ?? '');
+  return c.json({ sets });
 });
 
 // Batch-resolve many card names in one go (collection endpoint, ≤75/request).
@@ -169,10 +175,14 @@ app.post('/api/build', async (c) => {
   const commander = cards[0];
   if (!commander) return c.json({ error: `commander not found: ${body.commander}` }, 404);
 
-  const setConstraint =
-    body.set?.trim() && (body.setMode === 'only' || body.setMode === 'mostly')
-      ? { set: body.set.trim(), mode: body.setMode }
-      : undefined;
+  let setConstraint: { set: string; setName?: string; mode: 'only' | 'mostly' } | undefined;
+  if (body.set?.trim() && (body.setMode === 'only' || body.setMode === 'mostly')) {
+    // Accept a typed set NAME or CODE — resolve to the canonical code for the query.
+    const resolved = await resolveSet(body.set);
+    setConstraint = resolved
+      ? { set: resolved.code, setName: resolved.name, mode: body.setMode }
+      : { set: body.set.trim(), mode: body.setMode };
+  }
 
   return sseFromGenerator(c, () => buildChat(commander, body.strategy!, body.messages ?? [], setConstraint));
 });

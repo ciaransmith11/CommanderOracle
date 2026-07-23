@@ -191,11 +191,12 @@ export async function* buildChat(
   history: { role: 'user' | 'assistant'; content: string }[],
   setConstraint?: SetConstraint,
 ): AsyncGenerator<ModelEvent> {
+  const setLabel = setConstraint ? (setConstraint.setName ?? setConstraint.set) : '';
   const setInstruction =
     setConstraint?.mode === 'only'
-      ? `\nSET CONSTRAINT — HARD: Build this deck using ONLY cards from the set "${setConstraint.set}" (plus basic lands, which are exempt). Your search_cards results are already limited to that set — build from what they return. A few targeted searches per role is plenty; do NOT search exhaustively. If "${setConstraint.set}" simply can't fill a role, note it briefly and move on — still deliver a complete list.`
+      ? `\nSET CONSTRAINT — HARD: Build this deck using ONLY cards from the set "${setLabel}" (plus basic lands, which are exempt). Your search_cards results are already limited to that set — build from what they return. A few targeted searches per role is plenty; do NOT search exhaustively. If the set simply can't fill a role, note it briefly and move on — still deliver a complete list.`
       : setConstraint?.mode === 'mostly'
-        ? `\nSET PREFERENCE: Lean toward cards from the set "${setConstraint.set}" — a rough majority from it is the goal. But you have a FULL card pool: freely use strong cards from ANY set where they serve the strategy. Each search result shows its SET; prefer "${setConstraint.set}" when comparable, but do NOT exhaustively hunt for its cards — a few searches per role, then build.`
+        ? `\nSET PREFERENCE: Lean toward cards from the set "${setLabel}" — a rough majority from it is the goal. But you have a FULL card pool: freely use strong cards from ANY set where they serve the strategy. Each search result shows its SET; prefer "${setLabel}" when comparable, but do NOT exhaustively hunt for its cards — a few searches per role, then build.`
         : '';
   const context = [
     'Help the player build a Commander deck around the chosen strategy, per your doctrine.',

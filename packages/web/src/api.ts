@@ -37,6 +37,10 @@ export const api = {
   autocomplete: (q: string) =>
     fetch(`/api/autocomplete?q=${encodeURIComponent(q)}`).then(json<{ names: string[] }>),
 
+  /** Set name/code suggestions for the build set-constraint type-ahead. */
+  searchSets: (q: string) =>
+    fetch(`/api/sets?q=${encodeURIComponent(q)}`).then(json<{ sets: { code: string; name: string }[] }>),
+
   /** Batch-resolve card names (one request, collection endpoint server-side). */
   lookupCards: (names: string[]) =>
     fetch('/api/cards', {

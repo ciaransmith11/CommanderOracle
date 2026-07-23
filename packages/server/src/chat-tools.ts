@@ -39,9 +39,10 @@ export const CHAT_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-/** How a build should be constrained to a set. */
+/** How a build should be constrained to a set. `set` is the code used to filter; `setName` is for display. */
 export interface SetConstraint {
   set: string;
+  setName?: string;
   mode: 'only' | 'mostly';
 }
 

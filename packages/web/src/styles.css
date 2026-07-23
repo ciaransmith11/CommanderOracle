@@ -797,15 +797,33 @@ button {
   border-color: var(--bronze);
   color: #fff;
 }
-.setpool__code {
-  width: 130px;
+.setpool__input {
+  flex: 1 1 220px;
+  max-width: 340px;
+}
+.setpool__input input {
+  width: 100%;
   font-size: 13px;
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--inputBg);
   color: var(--ink);
-  text-transform: uppercase;
+}
+.setpool__input input:focus {
+  outline: none;
+  border-color: var(--bronzeBorder);
+}
+/* Suggestion dropdown that opens DOWNWARD (the type-ahead default opens up for the composer). */
+.ac--down .ac__list {
+  top: calc(100% + 4px);
+  bottom: auto;
+}
+.ac__code {
+  float: right;
+  color: var(--inkMute);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Build: selectable strategy directions */

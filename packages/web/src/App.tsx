@@ -17,6 +17,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { DeckEcho } from './components/DeckEcho.js';
 import { Markdown } from './components/Markdown.js';
 import { CommanderInput } from './components/CommanderInput.js';
+import { SetInput } from './components/SetInput.js';
 import { BuildDeckPanel } from './components/BuildDeckPanel.js';
 
 type Tab = 'analyse' | 'build' | 'recommend' | 'rules';
@@ -544,13 +545,10 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
                   Only one set
                 </button>
                 {setMode !== 'none' && (
-                  <input
-                    className="setpool__code"
-                    type="text"
-                    placeholder="Set code (e.g. LTC)"
+                  <SetInput
                     value={setCode}
-                    onChange={(e) => setSetCode(e.target.value)}
-                    maxLength={6}
+                    onChange={setSetCode}
+                    placeholder="Set name or code (e.g. Tales of Middle-earth)"
                   />
                 )}
               </div>
