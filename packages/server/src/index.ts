@@ -158,6 +158,8 @@ app.post('/api/build', async (c) => {
     commander?: string;
     strategy?: string;
     messages?: { role: 'user' | 'assistant'; content: string }[];
+    set?: string;
+    setMode?: 'only' | 'mostly';
   }>();
   if (!body.commander?.trim() || !body.strategy?.trim()) {
     return c.json({ error: 'missing commander or strategy' }, 400);
@@ -167,7 +169,12 @@ app.post('/api/build', async (c) => {
   const commander = cards[0];
   if (!commander) return c.json({ error: `commander not found: ${body.commander}` }, 404);
 
-  return sseFromGenerator(c, () => buildChat(commander, body.strategy!, body.messages ?? []));
+  const setConstraint =
+    body.set?.trim() && (body.setMode === 'only' || body.setMode === 'mostly')
+      ? { set: body.set.trim(), mode: body.setMode }
+      : undefined;
+
+  return sseFromGenerator(c, () => buildChat(commander, body.strategy!, body.messages ?? [], setConstraint));
 });
 
 /**

@@ -287,8 +287,10 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
     messages.push({
       role: 'user',
       content:
-        'That was not a complete build. Output ONLY the finished build now, ending with the ```decklist``` code block ' +
-        'listing every non-land card as "<qty> <name>". No preamble, no promises to search — the full list, now.',
+        'STOP. You have already searched many cards across the turns above — that is MORE than enough to build a ' +
+        'complete deck; you do NOT need to look up anything else. Do not say you need more cards. Using only what ' +
+        'you have already gathered, output the finished build NOW, ending with the ```decklist``` code block listing ' +
+        'every non-land card as "<qty> <name>". No preamble, no promises to search — the full list, now.',
     });
     yield { type: 'status', text: 'Finishing the build…' };
     for await (const chunk of streamTurn(messages, opts, true)) yield { type: 'text', text: chunk };

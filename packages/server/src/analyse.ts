@@ -3,7 +3,7 @@ import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { SLOT_BASELINES, DESIGN_PHILOSOPHY, parseDecklist } from '@commander-oracle/core';
 import { callModelJSON, streamModel, streamModelWithTools, type ModelEvent } from './anthropic.js';
 import { strategySystemBlocks, systemBlocks } from './prompt.js';
-import { CHAT_TOOLS, makeToolRunner } from './chat-tools.js';
+import { CHAT_TOOLS, makeToolRunner, type SetConstraint } from './chat-tools.js';
 import { resolveEntries } from './scryfall.js';
 
 export interface BuildStrategy {
@@ -189,12 +189,20 @@ export async function* buildChat(
   commander: Card,
   strategy: string,
   history: { role: 'user' | 'assistant'; content: string }[],
+  setConstraint?: SetConstraint,
 ): AsyncGenerator<ModelEvent> {
+  const setInstruction =
+    setConstraint?.mode === 'only'
+      ? `\nSET CONSTRAINT — HARD: Build this deck using ONLY cards from the set "${setConstraint.set}" (plus basic lands, which are exempt). Your search_cards results are already limited to that set — build from what they return. A few targeted searches per role is plenty; do NOT search exhaustively. If "${setConstraint.set}" simply can't fill a role, note it briefly and move on — still deliver a complete list.`
+      : setConstraint?.mode === 'mostly'
+        ? `\nSET PREFERENCE: Lean toward cards from the set "${setConstraint.set}" — a rough majority from it is the goal. But you have a FULL card pool: freely use strong cards from ANY set where they serve the strategy. Each search result shows its SET; prefer "${setConstraint.set}" when comparable, but do NOT exhaustively hunt for its cards — a few searches per role, then build.`
+        : '';
   const context = [
     'Help the player build a Commander deck around the chosen strategy, per your doctrine.',
     '\n# VERIFIED COMMANDER DATA (from live Scryfall)',
     cardLine(1, commander),
     `\n# Chosen strategy\n${strategy}`,
+    setInstruction,
     '\nGive the build as sections by role, in this order: Lands, Ramp, Card Advantage, Targeted Disruption, Mass Disruption, Plan Cards.',
     'ALWAYS INCLUDE A LANDS SECTION, and keep its arithmetic INTERNALLY CONSISTENT. State the TOTAL land count T (around the 38 baseline, adjusted for the curve). Name the key nonbasic / utility lands (find them with search_cards using t:land); let N be how many nonbasics you list. The basic lands then number EXACTLY T − N, and your per-colour basic split MUST sum to T − N — NOT to T. Do the subtraction explicitly and show it, e.g. "37 lands = 15 nonbasics + 22 basics (12 Mountain, 10 Plains)". The nonbasic count plus every basic quantity MUST add up to exactly T.',
     'Beside EVERY category heading, put the number of cards you recommend for it, e.g. "## Ramp (10)" or "### Lands (38)".',
@@ -205,10 +213,12 @@ export async function* buildChat(
     '\nFINAL OUTPUT — REQUIRED: after the prose, end your message with the COMPLETE decklist in a fenced code block marked ```decklist — one card per line as "<qty> <Card Name>", and NOTHING else inside the block. List every NON-LAND card and every NONBASIC land first, then fill the remaining land slots with basic lands (e.g. "20 Mountain") so the block totals EXACTLY 99 non-commander cards. IMPORTANT — the app will NOT fix your count for you: it will not cut spells if you list too many, and it will NOT pad with extra lands if you list too few (it flags the shortfall instead). So YOU must deliver exactly 99 = 59–62 non-land cards + 37–40 lands. If you are short on non-land cards, keep searching and add more real ones until you hit the count — never backfill the gap with extra basics. Count non-land + nonbasic lands + basics = 99 before you finish. Do not put the commander in the block.',
     '\nTOOLS: use `search_cards` to find REAL Commander-legal cards for each role within this strategy (colour identity is applied automatically), and `get_card` to verify a card\'s text. Recommend ONLY real cards you have looked up — never suggest a card or describe its text from memory. Make a few targeted searches per role, then write the build. Do NOT narrate or announce your searches; call the tools silently and output only the build.',
     '\nAfter the initial build, answer any follow-up questions the player asks, staying grounded in real card data via the tools.',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   const sys = systemBlocks();
-  const runTool = makeToolRunner(commander.colorIdentity);
+  const runTool = makeToolRunner(commander.colorIdentity, setConstraint);
   const baseMessages: Anthropic.Messages.MessageParam[] = [{ role: 'user', content: context }, ...history];
 
   // Follow-up conversational turns: stream normally, no decklist required.
@@ -225,7 +235,7 @@ export async function* buildChat(
     messages: baseMessages,
     tools: CHAT_TOOLS,
     runTool,
-    maxTurns: 8, // room for the "keep gathering" nudges
+    maxTurns: 12, // room for gather rounds + "keep gathering" nudges, esp. under a set constraint
     finalGuard: HAS_DECKLIST,
   })) {
     if (ev.type === 'text') buildText += ev.text;

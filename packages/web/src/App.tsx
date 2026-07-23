@@ -386,12 +386,16 @@ function AnalyseComposer({ busy, onSubmit }: { busy: boolean; onSubmit: (text: s
 
 type BuildMsg = { role: 'user' | 'assistant'; content: string };
 
+type SetMode = 'none' | 'mostly' | 'only';
+
 interface BuildState {
   commander: string;
   commanderCard: Card | null;
   strategies: BuildStrategy[] | null;
   chosen: string | null;
   convo: BuildMsg[];
+  setMode?: SetMode;
+  setCode?: string;
 }
 
 function BuildTab({ initial, sessionId, persist }: TabProps) {
@@ -401,6 +405,8 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
   const [strategies, setStrategies] = useState<BuildStrategy[] | null>(init?.strategies ?? null);
   const [chosen, setChosen] = useState<string | null>(init?.chosen ?? null);
   const [custom, setCustom] = useState('');
+  const [setMode, setSetMode] = useState<SetMode>(init?.setMode ?? 'none');
+  const [setCode, setSetCode] = useState(init?.setCode ?? '');
   const [convo, setConvo] = useState<BuildMsg[]>(init?.convo ?? []);
   const [streaming, setStreaming] = useState('');
   const [busy, setBusy] = useState(false);
@@ -421,6 +427,8 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
       strategies: strats,
       chosen: nextChosen,
       convo: nextConvo,
+      setMode,
+      setCode,
     };
     void persist('build', commander || 'Build', state, sid.current).then((id) => {
       sid.current = id;
@@ -452,8 +460,10 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
     setStreaming('');
     setStatus('');
     acc.current = '';
+    const code = setCode.trim().toUpperCase();
+    const constraint = setMode !== 'none' && code ? { set: code, setMode } : {};
     streamBuild(
-      { commander: commander.trim(), strategy, messages: nextConvo.slice(1) },
+      { commander: commander.trim(), strategy, messages: nextConvo.slice(1), ...constraint },
       {
         onStatus: setStatus,
         onDelta: (t) => {
@@ -512,6 +522,37 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
               <div className="echo__head">
                 <span className="echo__title">{commanderCard.name}</span>
                 <span className="echo__meta">{commanderCard.typeLine}</span>
+              </div>
+              <div className="setpool">
+                <span className="setpool__label">Card pool</span>
+                <button
+                  className={`chip${setMode === 'none' ? ' chip--on' : ''}`}
+                  onClick={() => setSetMode('none')}
+                >
+                  Any set
+                </button>
+                <button
+                  className={`chip${setMode === 'mostly' ? ' chip--on' : ''}`}
+                  onClick={() => setSetMode('mostly')}
+                >
+                  Mostly one set
+                </button>
+                <button
+                  className={`chip${setMode === 'only' ? ' chip--on' : ''}`}
+                  onClick={() => setSetMode('only')}
+                >
+                  Only one set
+                </button>
+                {setMode !== 'none' && (
+                  <input
+                    className="setpool__code"
+                    type="text"
+                    placeholder="Set code (e.g. LTC)"
+                    value={setCode}
+                    onChange={(e) => setSetCode(e.target.value)}
+                    maxLength={6}
+                  />
+                )}
               </div>
               <p style={{ marginTop: 0, color: 'var(--inkMid)' }}>Choose a direction to build around:</p>
               {strategies.map((s) => (

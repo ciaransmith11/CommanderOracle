@@ -196,6 +196,9 @@ export function streamBuild(
     commander: string;
     strategy: string;
     messages?: { role: 'user' | 'assistant'; content: string }[];
+    /** Optional set constraint: pin/prefer a single set for the build. */
+    set?: string;
+    setMode?: 'only' | 'mostly';
   },
   h: StreamHandlers,
 ): void {

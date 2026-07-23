@@ -767,6 +767,47 @@ button {
   font-size: 13px;
 }
 
+/* Build: set-constraint (card pool) control */
+.setpool {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 14px;
+}
+.setpool__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--inkMute);
+  margin-right: 4px;
+}
+.chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--inkMid);
+}
+.chip--on {
+  background: var(--bronze);
+  border-color: var(--bronze);
+  color: #fff;
+}
+.setpool__code {
+  width: 130px;
+  font-size: 13px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--inputBg);
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
 /* Build: selectable strategy directions */
 .strategy-card {
   display: block;
