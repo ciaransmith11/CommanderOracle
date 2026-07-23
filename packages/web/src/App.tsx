@@ -314,7 +314,7 @@ function AnalyseTab({ initial, sessionId, persist }: TabProps) {
           {items.length === 0 && !streaming && (
             <div className="placeholder">
               <h2>Analyse a deck</h2>
-              <p>Add your commander and 99-card decklist below.</p>
+              <p>Add your commander and 99-card decklist below to get recommendations on how to optimize.</p>
             </div>
           )}
           {items.map((item, i) =>
