@@ -273,6 +273,8 @@ export async function* buildChat(
         'Re-output the COMPLETE build ending with the full ```decklist``` code block, and briefly note what you changed and why.',
     },
   ];
+  // Discard the draft from the display; only the rebalanced build should show.
+  yield { type: 'reset' };
   yield* streamModelWithTools({
     systemBlocks: sys,
     messages: correctionMessages,

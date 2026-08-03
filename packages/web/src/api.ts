@@ -107,6 +107,8 @@ export interface StreamHandlers {
   onMeta?: (meta: RecommendMeta) => void;
   /** Live status of silent background work (e.g. "Searching Scryfall…"). */
   onStatus?: (text: string) => void;
+  /** Discard everything streamed so far and start fresh (e.g. a build being rebalanced). */
+  onReset?: () => void;
   signal?: AbortSignal;
 }
 
@@ -178,6 +180,8 @@ function handleFrame(frame: string, h: StreamHandlers): void {
     } catch {
       /* ignore malformed frame */
     }
+  } else if (event === 'reset') {
+    h.onReset?.();
   } else if (event === 'done') {
     h.onDone();
   } else if (event === 'error') {

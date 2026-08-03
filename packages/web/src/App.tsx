@@ -484,6 +484,11 @@ function BuildTab({ initial, sessionId, persist }: TabProps) {
       { commander: commander.trim(), strategy, messages: nextConvo.slice(1), ...constraint },
       {
         onStatus: setStatus,
+        onReset: () => {
+          // Rebalance: throw away the draft build; the final version streams next.
+          acc.current = '';
+          setStreaming('');
+        },
         onDelta: (t) => {
           setStatus('');
           acc.current += t;

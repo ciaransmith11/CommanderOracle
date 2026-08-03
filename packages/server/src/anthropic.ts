@@ -108,8 +108,15 @@ export interface ToolStreamOptions extends StreamOptions {
   finalGuard?: (text: string) => boolean;
 }
 
-/** A status update describes silent background work; text is final answer content. */
-export type ModelEvent = { type: 'status'; text: string } | { type: 'text'; text: string };
+/**
+ * A status update describes silent background work; text is final answer content;
+ * reset tells the caller to discard everything streamed so far and start fresh
+ * (used when a build is rebalanced — the draft is replaced by the final version).
+ */
+export type ModelEvent =
+  | { type: 'status'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'reset' };
 
 // Detects a "let me go do something" preamble — the model announcing it will
 // search/find/look up cards but ending its turn WITHOUT calling the tool. We look

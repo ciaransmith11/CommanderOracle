@@ -105,6 +105,8 @@ function sseFromGenerator(c: Context, gen: () => AsyncGenerator<string | ModelEv
           await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text: chunk }) });
         } else if (chunk.type === 'status') {
           await stream.writeSSE({ event: 'status', data: JSON.stringify({ text: chunk.text }) });
+        } else if (chunk.type === 'reset') {
+          await stream.writeSSE({ event: 'reset', data: '{}' });
         } else {
           await stream.writeSSE({ event: 'delta', data: JSON.stringify({ text: chunk.text }) });
         }
