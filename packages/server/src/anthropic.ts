@@ -206,7 +206,7 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
   const messages: Anthropic.Messages.MessageParam[] = [...opts.messages];
   const maxToolTurns = opts.maxTurns ?? 6;
 
-  let usedTools = false;
+  let completed = false;
   let lastText = '';
 
   // Gather phase — silent except for live status updates.
@@ -216,7 +216,6 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
     messages.push({ role: 'assistant', content: message.content as unknown as Anthropic.Messages.ContentBlockParam[] });
 
     if (message.stop_reason === 'tool_use') {
-      usedTools = true;
       yield { type: 'status', text: describeToolBatch(message.content) };
 
       const toolResults: Anthropic.Messages.ContentBlockParam[] = [];
@@ -240,7 +239,10 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
     // ("Let me find real cards…") — or a finalGuard says it's incomplete.
     const stalled = looksLikeToolPreamble(text);
     const incomplete = opts.finalGuard ? !opts.finalGuard(text) : false;
-    if (!stalled && !incomplete) break;
+    if (!stalled && !incomplete) {
+      completed = true;
+      break;
+    }
 
     // Don't surface the preamble. Tell the model to actually CALL the tools now
     // and keep going (tools stay available next turn).
@@ -253,16 +255,17 @@ export async function* streamModelWithTools(opts: ToolStreamOptions): AsyncGener
     });
   }
 
-  // If the model answered directly without ever calling a tool, that text IS the
-  // answer — UNLESS it's a stall preamble, or a finalGuard says it's incomplete,
-  // in which case we fall through and force a proper final answer.
-  if (!usedTools && !looksLikeToolPreamble(lastText) && (!opts.finalGuard || opts.finalGuard(lastText))) {
+  // If the model produced a complete answer during gathering, that text IS the
+  // answer — emit it directly. Regenerating it with a forced turn just makes the
+  // model reply "the response above is complete" instead of repeating itself.
+  if (completed) {
     if (lastText) yield { type: 'text', text: lastText };
     return;
   }
 
-  // Force one clean final answer. The nudge forbids further narration so the
-  // model can't stall with another "let me gather more" instead of delivering.
+  // The model never delivered a complete answer on its own (it kept gathering or
+  // stalled up to the turn cap). Force one clean final answer. The nudge forbids
+  // further narration so it can't stall with another "let me gather more".
   yield { type: 'status', text: 'Writing it up…' };
   const nudge: Anthropic.Messages.TextBlockParam = {
     type: 'text',
