@@ -6,12 +6,17 @@ export function Sidebar({
   onSelect,
   onNew,
   onDelete,
+  open = false,
+  onClose,
 }: {
   sessions: SessionMeta[];
   activeId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  /** Mobile drawer open state (ignored on desktop, where the sidebar is always shown). */
+  open?: boolean;
+  onClose?: () => void;
 }) {
   const MODE_LABEL: Record<string, string> = {
     analyse: 'Analyse',
@@ -20,7 +25,9 @@ export function Sidebar({
     rules: 'Rules',
   };
   return (
-    <aside className="sidebar">
+    <>
+      {open && <div className="sidebar__backdrop" onClick={onClose} />}
+      <aside className={`sidebar${open ? ' sidebar--open' : ''}`}>
       <div className="sidebar__head">
         <span className="sidebar__title">History</span>
         <button className="btn-new" onClick={onNew}>
@@ -50,6 +57,7 @@ export function Sidebar({
           </button>
         </div>
       ))}
-    </aside>
+      </aside>
+    </>
   );
 }

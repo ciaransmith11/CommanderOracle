@@ -59,6 +59,7 @@ export function App() {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [selected, setSelected] = useState<{ id: string; mode: string; state: unknown } | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => setHealth(null));
@@ -85,11 +86,13 @@ export function App() {
     const state = session.state ? JSON.parse(session.state) : null;
     setTab(session.mode as Tab);
     setSelected({ id, mode: session.mode, state });
+    setSidebarOpen(false); // close the mobile drawer after picking a session
   }
 
   function newSession() {
     setSelected(null);
     setNonce((n) => n + 1);
+    setSidebarOpen(false);
   }
 
   async function deleteSession(id: string) {
@@ -106,13 +109,15 @@ export function App() {
 
   return (
     <div className="app">
-      <Header hasApiKey={health?.hasApiKey} />
+      <Header hasApiKey={health?.hasApiKey} onMenu={() => setSidebarOpen((o) => !o)} />
       <Sidebar
         sessions={sessions}
         activeId={selected?.id ?? null}
         onSelect={openSession}
         onNew={newSession}
         onDelete={deleteSession}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
       <main className="main">
         <nav className="tabs">
