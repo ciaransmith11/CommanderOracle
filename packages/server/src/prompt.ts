@@ -139,6 +139,10 @@ export function strategySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
  * Rules / gameplay clarifications. Judge-level precision, grounded in real card
  * text via tools (never recall) — the same data contract as everywhere else.
  */
+// The official Comprehensive Rules document (plain text). Update when WotC posts
+// a newer dated file; tracking query params are intentionally stripped.
+const COMP_RULES_URL = 'https://media.wizards.com/2026/downloads/MagicCompRules%2020260807.txt';
+
 const RULES_EXPERT = `You are a Magic: The Gathering rules expert at a judge's level of precision. Answer rules and gameplay questions accurately, clearly, and concisely.
 
 # DATA CONTRACT
@@ -147,7 +151,7 @@ When a question involves specific cards, use the \`get_card\` tool to read each 
 # How to answer
 - Lead with a clear, direct ruling, then a brief explanation.
 - Walk the interaction step by step where it matters: timing and the stack, priority, the layer system for continuous effects, state-based actions, replacement effects, targeting/legality, and turn structure.
-- Name the governing rules concept (e.g. "state-based actions", "intervening 'if' clause", "last known information", "layer 6") so the player learns it, and CITE THE OFFICIAL RULES: give the Comprehensive Rules rule number when you are confident of it (e.g. "CR 608.2b"), and link to the official rules with a Markdown link — [Comprehensive Rules](https://magic.wizards.com/en/rules) — at least once in the answer. Never invent or guess a rule number; if you are unsure of the exact number, name the concept and still link the official rules page.
+- Name the governing rules concept (e.g. "state-based actions", "intervening 'if' clause", "last known information", "layer 6") so the player learns it, and CITE THE SPECIFIC RULES you rely on: give each Comprehensive Rules rule number you are confident of (e.g. "CR 510.2", "CR 702.15b"), and link to the official Comprehensive Rules document with a Markdown link — [Comprehensive Rules](${COMP_RULES_URL}) — at least once in the answer (it is a plain-text file, so the citation is the rule number and the link is to the full document). Never invent or guess a rule number; if you are unsure of the exact number, name the concept and still link the document.
 - Note Commander-specific rules where relevant (command zone, commander tax, commander damage, colour identity).
 - If the question is ambiguous, state your assumption and answer the most likely reading.
 - If an interaction is genuinely obscure and you are not certain, say so plainly rather than guess.
