@@ -34,7 +34,7 @@ interface ScryfallCardFace {
   type_line?: string;
   oracle_text?: string;
   mana_cost?: string;
-  image_uris?: { normal?: string };
+  image_uris?: { normal?: string; art_crop?: string };
 }
 
 interface ScryfallCard {
@@ -49,7 +49,7 @@ interface ScryfallCard {
   set?: string;
   set_name?: string;
   prices?: { usd?: string | null; usd_foil?: string | null };
-  image_uris?: { normal?: string };
+  image_uris?: { normal?: string; art_crop?: string };
   scryfall_uri?: string;
   card_faces?: ScryfallCardFace[];
 }
@@ -99,6 +99,7 @@ export function normalizeCard(c: ScryfallCard): Card {
     c.mana_cost && c.mana_cost.length > 0 ? c.mana_cost : (front?.mana_cost ?? null);
 
   const imageUrl = c.image_uris?.normal ?? front?.image_uris?.normal ?? null;
+  const artCrop = c.image_uris?.art_crop ?? front?.image_uris?.art_crop ?? null;
 
   // Per-face data for double-faced / split cards (2+ named faces), so each face
   // name can be hovered to show that face.
@@ -119,6 +120,7 @@ export function normalizeCard(c: ScryfallCard): Card {
     edhrecRank: c.edhrec_rank ?? null,
     priceUsd: parsePrice(c.prices?.usd) ?? parsePrice(c.prices?.usd_foil),
     imageUrl,
+    artCrop,
     scryfallUri: c.scryfall_uri ?? null,
     set: c.set ? c.set.toUpperCase() : undefined,
     setName: c.set_name,

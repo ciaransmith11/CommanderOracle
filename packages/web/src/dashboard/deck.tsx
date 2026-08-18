@@ -83,6 +83,23 @@ export function DeckProvider({ children }: { children: ReactNode }) {
   return <DeckContext.Provider value={value}>{children}</DeckContext.Provider>;
 }
 
+// --- Accent colour derived from the deck's colour identity ----------------
+
+const COLOR_ACCENT: Record<string, string> = {
+  W: '#c2a24a',
+  U: '#2f6fb0',
+  B: '#4a4550',
+  R: '#b0432f',
+  G: '#3f8a58',
+};
+
+/** A single accent hue for the deck: the colour if mono, gold if multi, slate if none. */
+export function accentForColors(colors: string[]): string {
+  if (colors.length === 0) return '#64707c'; // colourless / no deck → slate
+  if (colors.length === 1) return COLOR_ACCENT[colors[0]!] ?? '#64707c';
+  return '#b0862f'; // multicolour → gold
+}
+
 // --- Derived stats (pure; the stats row reads these) ----------------------
 
 const CURVE_BUCKETS = ['0', '1', '2', '3', '4', '5', '6+'] as const;

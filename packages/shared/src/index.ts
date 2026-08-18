@@ -46,6 +46,8 @@ export interface Card {
   edhrecRank: number | null;
   priceUsd: number | null;
   imageUrl: string | null;
+  /** Just the illustration (Scryfall art_crop) — used by the dashboard card grid. */
+  artCrop?: string | null;
   scryfallUri: string | null;
   /** Set code (e.g. "LTC") and full set name of the resolved printing, from Scryfall. */
   set?: string;

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { DeckProvider } from './deck.js';
+import { useState, type CSSProperties } from 'react';
+import { DeckProvider, useDeck, deckStats, accentForColors } from './deck.js';
+import { AnalyzePane } from './Analyze.js';
 import './dashboard.css';
 
 /**
@@ -18,11 +19,21 @@ const MODES: { id: Mode; label: string }[] = [
 ];
 
 export function DashboardShell() {
-  const [mode, setMode] = useState<Mode>('build');
-
   return (
     <DeckProvider>
-      <div className="dash">
+      <ShellInner />
+    </DeckProvider>
+  );
+}
+
+function ShellInner() {
+  const [mode, setMode] = useState<Mode>('build');
+  const { commander, cards } = useDeck();
+  // The whole shell's accent shifts subtly with the deck's colour identity.
+  const accent = accentForColors(deckStats(cards, commander).colors);
+
+  return (
+    <div className="dash" style={{ '--accent': accent } as CSSProperties}>
         <header className="dash__topbar">
           <div className="dash__brand">
             <img className="dash__logo" src="/deckromancer_icon_crop.png" alt="" />
@@ -49,8 +60,7 @@ export function DashboardShell() {
           </main>
           <AdvisorSidebar mode={mode} />
         </div>
-      </div>
-    </DeckProvider>
+    </div>
   );
 }
 
@@ -65,13 +75,7 @@ function ModeMain({ mode }: { mode: Mode }) {
         />
       );
     case 'analyze':
-      return (
-        <EmptyState
-          title="Analyze a deck"
-          body="Paste a decklist to see its mana curve, colour identity, and deck-health at a glance, with the full card grid below — and apply the advisor's suggested swaps in one click."
-          hint="Coming next: paste box → stats row → card grid."
-        />
-      );
+      return <AnalyzePane />;
     case 'recommend':
       return (
         <EmptyState
