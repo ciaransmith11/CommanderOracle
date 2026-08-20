@@ -3,6 +3,7 @@ import { DeckProvider, useDeck, deckStats, accentForColors } from './deck.js';
 import { AnalyzePane } from './Analyze.js';
 import { BuildPane } from './Build.js';
 import { RecommendPane } from './Recommend.js';
+import { Advisor } from './Advisor.js';
 import './dashboard.css';
 
 /**
@@ -60,7 +61,7 @@ function ShellInner() {
           <main className="dash__main">
             <ModeMain mode={mode} />
           </main>
-          <AdvisorSidebar mode={mode} />
+          <Advisor mode={mode} />
         </div>
     </div>
   );
@@ -97,25 +98,3 @@ function EmptyState({ title, body, hint }: { title: string; body: string; hint?:
   );
 }
 
-function AdvisorSidebar({ mode }: { mode: Mode }) {
-  return (
-    <aside className="advisor" aria-label="Advisor">
-      <div className="advisor__head">
-        <span className="advisor__title">Advisor</span>
-        <span className="advisor__mode">{mode}</span>
-      </div>
-      <div className="advisor__feed">
-        <div className="advisor__placeholder">
-          The advisor stays with you across every mode. It'll analyze, suggest swaps, find cards, and answer
-          rules questions here.
-        </div>
-      </div>
-      <form className="advisor__composer" onSubmit={(e) => e.preventDefault()}>
-        <input className="advisor__input" placeholder="Ask the advisor…" disabled />
-        <button className="advisor__send" type="submit" aria-label="Send" disabled>
-          ↑
-        </button>
-      </form>
-    </aside>
-  );
-}
