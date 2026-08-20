@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { SLOT_BASELINES, DESIGN_PHILOSOPHY, parseDecklist } from '@commander-oracle/core';
 import { callModelJSON, streamModel, streamModelWithTools, type ModelEvent } from './anthropic.js';
-import { strategySystemBlocks, systemBlocks } from './prompt.js';
+import { strategySystemBlocks, suggestSystemBlocks, systemBlocks } from './prompt.js';
 import { CHAT_TOOLS, makeToolRunner, type SetConstraint } from './chat-tools.js';
 import { resolveEntries } from './scryfall.js';
 
@@ -125,6 +125,33 @@ export function renderDeckForModel(deck: CategorizedDeck): string {
   lines.push(`Adjustment: ${DESIGN_PHILOSOPHY.dynamicAdjustment}`);
 
   return lines.join('\n');
+}
+
+/** Raw swap suggestions (names only) — the endpoint resolves + validates the adds. */
+export interface RawSwap {
+  cut: string;
+  add: string;
+  reason: string;
+}
+
+/** Ask the model for structured swap suggestions over a verified deck. */
+export async function suggestSwaps(deck: CategorizedDeck): Promise<RawSwap[]> {
+  const data = await callModelJSON({
+    systemBlocks: suggestSystemBlocks(),
+    userContent: renderDeckForModel(deck),
+    maxTokens: 1024,
+  });
+  const s = (data as { suggestions?: unknown })?.suggestions;
+  if (!Array.isArray(s)) return [];
+  return s
+    .filter(
+      (x): x is RawSwap =>
+        !!x &&
+        typeof (x as RawSwap).cut === 'string' &&
+        typeof (x as RawSwap).add === 'string' &&
+        typeof (x as RawSwap).reason === 'string',
+    )
+    .slice(0, 6);
 }
 
 /** Stream a full deck analysis. */

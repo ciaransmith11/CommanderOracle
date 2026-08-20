@@ -64,6 +64,14 @@ export const api = {
       body: JSON.stringify({ strategy, commander }),
     }).then(json<{ commander: Card | null; groups: { role: string; cards: Card[] }[] }>),
 
+  /** Structured swap suggestions for a deck (add resolved to a full Card, validated). */
+  suggest: (deck: CategorizedDeck) =>
+    fetch('/api/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deck }),
+    }).then(json<{ suggestions: { cut: string; add: Card; reason: string }[] }>),
+
   /** Land-aware reconciliation of a proposed build decklist to exactly 100. */
   reconcileBuild: (text: string, colorIdentity: string[]) =>
     fetch('/api/build/reconcile', {

@@ -10,7 +10,7 @@ import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
 import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries, resolveSet, searchSets } from './scryfall.js';
-import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
+import { analyseDeck, buildChat, chatDeck, proposeStrategies, suggestSwaps } from './analyse.js';
 import { rulesChat } from './rules.js';
 import {
   gatherCandidates,
@@ -289,6 +289,53 @@ app.post('/api/recommend/cards', async (c) => {
   const roleQueries = await generateRoleQueries(body.strategy, commanderCard?.name);
   const groups = await gatherRoleGroups(roleQueries, commanderCard?.colorIdentity);
   return c.json({ commander: commanderCard, groups });
+});
+
+/**
+ * Structured swap suggestions for the current deck: the model proposes cut/add
+ * pairs, and the server RESOLVES + VALIDATES each add (real card, Commander-legal,
+ * within the commander's colour identity, not already in the deck) and confirms
+ * the cut is actually in the deck. Returns the add as a full Card for the tile.
+ */
+app.post('/api/suggest', async (c) => {
+  if (!hasApiKey()) return c.json({ error: 'ANTHROPIC_API_KEY not set' }, 503);
+  const body = await c.req.json<{ deck?: CategorizedDeck }>();
+  if (!body.deck) return c.json({ error: 'missing deck' }, 400);
+  const deck = body.deck;
+
+  const raw = await suggestSwaps(deck);
+  if (raw.length === 0) return c.json({ suggestions: [] });
+
+  // Resolve the proposed adds to real Cards (by full name and front-face name).
+  const { cards } = await fetchCollection(raw.map((s) => s.add));
+  const byName = new Map<string, Card>();
+  for (const card of cards) {
+    byName.set(card.name.toLowerCase(), card);
+    const front = card.name.split(' // ')[0];
+    if (front) byName.set(front.toLowerCase(), card);
+  }
+
+  const deckCards = [...deck.commander, ...deck.sections.flatMap((s) => s.cards.map((cc) => cc.card))];
+  const inDeck = new Set(deckCards.map((c) => c.name.toLowerCase()));
+  const cuttable = new Set(deck.sections.flatMap((s) => s.cards.map((cc) => cc.card.name.toLowerCase())));
+  const ci = deck.commander[0]?.colorIdentity ?? [];
+  const withinCI = (colors: string[]) => colors.every((col) => ci.includes(col));
+
+  const suggestions = [];
+  const usedAdds = new Set<string>();
+  for (const s of raw) {
+    const add = byName.get(s.add.toLowerCase());
+    if (!add) continue; // couldn't resolve — drop
+    const addKey = add.name.toLowerCase();
+    if (inDeck.has(addKey) || usedAdds.has(addKey)) continue; // already in deck / dup suggestion
+    if (!add.legalCommander) continue;
+    if (ci.length && !withinCI(add.colorIdentity)) continue; // off colour identity
+    if (!cuttable.has(s.cut.toLowerCase())) continue; // cut must be a non-commander deck card
+    usedAdds.add(addKey);
+    suggestions.push({ cut: s.cut, add, reason: s.reason });
+  }
+
+  return c.json({ suggestions });
 });
 
 // --- Sessions (sidebar persistence) ---------------------------------------
