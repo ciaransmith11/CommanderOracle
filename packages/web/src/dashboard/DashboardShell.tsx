@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react';
 import { DeckProvider, useDeck, deckStats, accentForColors } from './deck.js';
 import { AnalyzePane } from './Analyze.js';
 import { BuildPane } from './Build.js';
+import { RecommendPane } from './Recommend.js';
 import './dashboard.css';
 
 /**
@@ -72,13 +73,7 @@ function ModeMain({ mode }: { mode: Mode }) {
     case 'analyze':
       return <AnalyzePane />;
     case 'recommend':
-      return (
-        <EmptyState
-          title="Find cards"
-          body="Describe a strategy (and optionally a commander) to get real, on-colour card suggestions — grouped by role like ramp, removal, and payoffs — that you can add straight to a deck."
-          hint="Coming next: strategy box → role-grouped card grid."
-        />
-      );
+      return <RecommendPane />;
     case 'rules':
       return (
         <EmptyState

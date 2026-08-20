@@ -56,6 +56,14 @@ export const api = {
       body: JSON.stringify({ commander }),
     }).then(json<{ commander: Card; strategies: BuildStrategy[] }>),
 
+  /** Role-grouped card recommendations (structured) for the dashboard grid. */
+  recommendCards: (strategy: string, commander?: string) =>
+    fetch('/api/recommend/cards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy, commander }),
+    }).then(json<{ commander: Card | null; groups: { role: string; cards: Card[] }[] }>),
+
   /** Land-aware reconciliation of a proposed build decklist to exactly 100. */
   reconcileBuild: (text: string, colorIdentity: string[]) =>
     fetch('/api/build/reconcile', {

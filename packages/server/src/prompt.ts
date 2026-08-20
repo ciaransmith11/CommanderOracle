@@ -171,6 +171,19 @@ export function querySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: QUERY_WRITER, cache_control: { type: 'ephemeral' } }];
 }
 
+const ROLE_QUERY_WRITER = `You convert a Magic: The Gathering Commander strategy into Scryfall query fragments GROUPED BY DECK ROLE, so a card finder can show results section by section.
+
+Use Scryfall search syntax for CARD MECHANICS only (o:"phrase", t:type, keyword:x, pow>=/mv<=, OR/AND) — the SAME syntax rules as always. Do NOT include colour (id:/c:), legality (legal:), or basic-land filters; those are added for you.
+
+Pick the 4–6 roles most relevant to THIS strategy from: Ramp, Card Advantage, Removal / Interaction, Board Wipes, Payoffs, Enablers, Synergy Pieces, Protection, Finishers, Lands. For each role give ONE fragment that finds real cards for that role WITHIN the strategy (e.g. for a Treasure deck, Payoffs might be o:"sacrifice" o:"Treasure" o:"draw").
+
+Return ONLY a JSON object, no prose:
+{"groups":[{"role":"Ramp","query":"..."},{"role":"Payoffs","query":"..."}]}`;
+
+export function roleQuerySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
+  return [{ type: 'text', text: ROLE_QUERY_WRITER, cache_control: { type: 'ephemeral' } }];
+}
+
 export function recommendSystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: RECOMMENDER, cache_control: { type: 'ephemeral' } }];
 }

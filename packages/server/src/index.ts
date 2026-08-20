@@ -12,7 +12,13 @@ import type { ModelEvent } from './anthropic.js';
 import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries, resolveSet, searchSets } from './scryfall.js';
 import { analyseDeck, buildChat, chatDeck, proposeStrategies } from './analyse.js';
 import { rulesChat } from './rules.js';
-import { gatherCandidates, generateQueries, recommendStream } from './recommend.js';
+import {
+  gatherCandidates,
+  gatherRoleGroups,
+  generateQueries,
+  generateRoleQueries,
+  recommendStream,
+} from './recommend.js';
 import { sessions } from './db.js';
 
 const app = new Hono();
@@ -262,6 +268,27 @@ app.post('/api/recommend', async (c) => {
       await stream.writeSSE({ event: 'error', data: JSON.stringify({ message }) });
     }
   });
+});
+
+/**
+ * Structured, role-grouped card recommendations for the dashboard grid. Unlike
+ * /api/recommend (which streams curated prose), this returns real Scryfall cards
+ * grouped by deck role, ready to render as tiles with an "add to deck" action.
+ */
+app.post('/api/recommend/cards', async (c) => {
+  if (!hasApiKey()) return c.json({ error: 'ANTHROPIC_API_KEY not set' }, 503);
+  const body = await c.req.json<{ commander?: string; strategy?: string }>();
+  if (!body.strategy?.trim()) return c.json({ error: 'missing strategy' }, 400);
+
+  let commanderCard: Card | null = null;
+  if (body.commander?.trim()) {
+    const { cards } = await fetchCollection([body.commander]);
+    commanderCard = cards[0] ?? null;
+  }
+
+  const roleQueries = await generateRoleQueries(body.strategy, commanderCard?.name);
+  const groups = await gatherRoleGroups(roleQueries, commanderCard?.colorIdentity);
+  return c.json({ commander: commanderCard, groups });
 });
 
 // --- Sessions (sidebar persistence) ---------------------------------------

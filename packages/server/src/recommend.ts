@@ -1,7 +1,7 @@
 import type { Card } from '@commander-oracle/shared';
 import { searchCards } from './scryfall.js';
 import { callModelJSON, streamModel } from './anthropic.js';
-import { querySystemBlocks, recommendSystemBlocks } from './prompt.js';
+import { querySystemBlocks, recommendSystemBlocks, roleQuerySystemBlocks } from './prompt.js';
 
 /**
  * Card recommendations for a strategy/keyword. The model never sources cards
@@ -66,6 +66,72 @@ export async function gatherCandidates(
   }
 
   return { candidates: candidates.slice(0, MAX_CANDIDATES), queries };
+}
+
+// --- Role-grouped recommendations (structured, for the dashboard grid) ------
+
+const MAX_ROLES = 6;
+const PER_ROLE_LIMIT = 12;
+
+export interface RoleQuery {
+  role: string;
+  query: string;
+}
+export interface RoleGroup {
+  role: string;
+  cards: Card[];
+}
+
+/** Ask the model for Scryfall query fragments labelled by deck role. */
+export async function generateRoleQueries(strategy: string, commanderName?: string): Promise<RoleQuery[]> {
+  const data = await callModelJSON({
+    systemBlocks: roleQuerySystemBlocks(),
+    userContent: [
+      `Strategy / keyword: ${strategy}`,
+      commanderName ? `Commander (thematic context): ${commanderName}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  });
+  const groups = (data as { groups?: unknown })?.groups;
+  if (!Array.isArray(groups)) return [];
+  return groups
+    .filter(
+      (g): g is RoleQuery =>
+        !!g && typeof (g as RoleQuery).role === 'string' && typeof (g as RoleQuery).query === 'string' && (g as RoleQuery).query.trim().length > 0,
+    )
+    .slice(0, MAX_ROLES);
+}
+
+/**
+ * Run each role's query against Scryfall (colour identity + legality + no basics
+ * enforced in code) and return real cards grouped by role. A card is shown under
+ * only ONE role (the first that surfaces it), so groups don't repeat cards.
+ */
+export async function gatherRoleGroups(
+  roleQueries: RoleQuery[],
+  colorIdentity?: string[],
+): Promise<RoleGroup[]> {
+  const seen = new Set<string>();
+  const groups: RoleGroup[] = [];
+  const ci = colorIdentity && colorIdentity.length ? ` id<=${colorIdentity.join('').toLowerCase()}` : '';
+
+  for (let i = 0; i < roleQueries.length; i++) {
+    if (i > 0) await sleep(100); // be kind to Scryfall
+    const { role, query } = roleQueries[i]!;
+    const fullQuery = `(${query}) legal:commander -type:basic${ci}`;
+    const cards = await searchCards(fullQuery, PER_ROLE_LIMIT + 8);
+    const fresh: Card[] = [];
+    for (const card of cards) {
+      const key = card.name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fresh.push(card);
+      if (fresh.length >= PER_ROLE_LIMIT) break;
+    }
+    if (fresh.length) groups.push({ role, cards: fresh });
+  }
+  return groups;
 }
 
 function candidateLine(card: Card): string {
