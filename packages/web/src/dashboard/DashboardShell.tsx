@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react';
 import { DeckProvider, useDeck, deckStats, accentForColors } from './deck.js';
 import { AnalyzePane } from './Analyze.js';
+import { BuildPane } from './Build.js';
 import './dashboard.css';
 
 /**
@@ -67,13 +68,7 @@ function ShellInner() {
 function ModeMain({ mode }: { mode: Mode }) {
   switch (mode) {
     case 'build':
-      return (
-        <EmptyState
-          title="Build a deck"
-          body="Name a commander and the advisor will walk you through distinct ways to build it. Once a decklist takes shape, it appears here as a live dashboard — stats, curve, and the full card grid."
-          hint="Coming next: commander picker → strategy directions."
-        />
-      );
+      return <BuildPane />;
     case 'analyze':
       return <AnalyzePane />;
     case 'recommend':
