@@ -875,3 +875,49 @@
   padding: 6px 12px;
   border-radius: 7px;
 }
+
+/* --- Rules: reference cards --------------------------------------------- */
+
+.refs__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+.ref {
+  display: flex;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.ref__img {
+  flex-shrink: 0;
+  width: 120px;
+  border-radius: 8px;
+  align-self: flex-start;
+}
+.ref__body {
+  min-width: 0;
+}
+.ref__name {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.ref__name:hover {
+  color: var(--accent);
+}
+.ref__type {
+  font-size: 12px;
+  color: var(--ink-mute);
+  margin: 2px 0 8px;
+}
+.ref__oracle {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-mid);
+  white-space: pre-wrap;
+}

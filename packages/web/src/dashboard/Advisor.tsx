@@ -1,19 +1,43 @@
 import { useEffect, useRef, useState } from 'react';
 import { marked } from 'marked';
 import { categorise } from '@commander-oracle/core';
-import { streamChat, streamRules, type StreamHandlers } from '../api.js';
+import { api, streamChat, streamRules, type StreamHandlers } from '../api.js';
 import { useDeck } from './deck.js';
 
 marked.setOptions({ gfm: true, breaks: false });
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
+/** Pull bolded card names (**Name**) from a rules answer, cleaned and de-duped. */
+function extractCardNames(md: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const m of md.matchAll(/\*\*([^*\n]+)\*\*/g)) {
+    const name = m[1]!
+      .replace(/[’'`]s$/i, '')
+      .replace(/[.,:;!?]+$/, '')
+      .trim();
+    const key = name.toLowerCase();
+    // Skip obvious non-cards (rule refs, single words that are all-caps like CR).
+    if (name.length < 3 || /^CR\b/i.test(name) || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out.slice(0, 12);
+}
+
 /**
  * The persistent advisor sidebar — a compact live chat that stays across modes.
  * Routing: Rules → /api/rules; a loaded deck → /api/chat (deck-aware, sent from
  * live deck state so it reflects edits); otherwise a general MTG chat.
  */
-export function Advisor({ mode }: { mode: string }) {
+export function Advisor({
+  mode,
+  onReferences,
+}: {
+  mode: string;
+  onReferences?: (cards: import('@commander-oracle/shared').Card[]) => void;
+}) {
   const { commander, cards } = useDeck();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [streaming, setStreaming] = useState('');
@@ -39,6 +63,7 @@ export function Advisor({ mode }: { mode: string }) {
     setStatus('');
     setStreaming('');
     acc.current = '';
+    if (mode === 'rules') onReferences?.([]); // clear stale references for the new question
 
     const handlers: StreamHandlers = {
       onStatus: setStatus,
@@ -52,10 +77,16 @@ export function Advisor({ mode }: { mode: string }) {
         setStreaming(acc.current);
       },
       onDone: () => {
-        setMessages([...next, { role: 'assistant', content: acc.current }]);
+        const answer = acc.current;
+        setMessages([...next, { role: 'assistant', content: answer }]);
         setStreaming('');
         setStatus('');
         setBusy(false);
+        // In Rules mode, surface the cards the answer referenced.
+        if (mode === 'rules' && onReferences) {
+          const names = extractCardNames(answer);
+          if (names.length) api.lookupCards(names).then((r) => onReferences(r.cards)).catch(() => {});
+        }
       },
       onError: (m) => {
         setMessages([...next, { role: 'assistant', content: `⚠ ${m}` }]);

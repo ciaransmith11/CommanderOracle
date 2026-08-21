@@ -1,8 +1,10 @@
 import { useState, type CSSProperties } from 'react';
+import type { Card } from '@commander-oracle/shared';
 import { DeckProvider, useDeck, deckStats, accentForColors } from './deck.js';
 import { AnalyzePane } from './Analyze.js';
 import { BuildPane } from './Build.js';
 import { RecommendPane } from './Recommend.js';
+import { RulesReference } from './Rules.js';
 import { Advisor } from './Advisor.js';
 import './dashboard.css';
 
@@ -31,6 +33,7 @@ export function DashboardShell() {
 
 function ShellInner() {
   const [mode, setMode] = useState<Mode>('build');
+  const [refCards, setRefCards] = useState<Card[]>([]);
   const { commander, cards } = useDeck();
   // The whole shell's accent shifts subtly with the deck's colour identity.
   const accent = accentForColors(deckStats(cards, commander).colors);
@@ -59,15 +62,15 @@ function ShellInner() {
 
         <div className="dash__body">
           <main className="dash__main">
-            <ModeMain mode={mode} />
+            <ModeMain mode={mode} refCards={refCards} />
           </main>
-          <Advisor mode={mode} />
+          <Advisor mode={mode} onReferences={setRefCards} />
         </div>
     </div>
   );
 }
 
-function ModeMain({ mode }: { mode: Mode }) {
+function ModeMain({ mode, refCards }: { mode: Mode; refCards: Card[] }) {
   switch (mode) {
     case 'build':
       return <BuildPane />;
@@ -76,25 +79,7 @@ function ModeMain({ mode }: { mode: Mode }) {
     case 'recommend':
       return <RecommendPane />;
     case 'rules':
-      return (
-        <EmptyState
-          title="Rules & interactions"
-          body="Ask any Magic rules question. Answers are grounded in real card text, cite the Comprehensive Rules, and show the cards involved right beside the explanation."
-          hint="Rules lives in the advisor — the chat is the main surface here."
-        />
-      );
+      return <RulesReference cards={refCards} busy={false} />;
   }
-}
-
-function EmptyState({ title, body, hint }: { title: string; body: string; hint?: string }) {
-  return (
-    <div className="empty">
-      <div className="empty__card">
-        <h2 className="empty__title">{title}</h2>
-        <p className="empty__body">{body}</p>
-        {hint && <p className="empty__hint">{hint}</p>}
-      </div>
-    </div>
-  );
 }
 
