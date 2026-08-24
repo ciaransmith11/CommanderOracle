@@ -627,8 +627,14 @@ button {
   position: fixed;
   z-index: 50;
   display: flex;
+  flex-direction: column;
   gap: 6px;
   pointer-events: none;
+  width: max-content;
+}
+.cardpreview__imgs {
+  display: flex;
+  gap: 6px;
 }
 .cardpreview img {
   width: 220px;
@@ -638,6 +644,32 @@ button {
 }
 .cardpreview--multi img {
   width: 188px;
+}
+/* Reasoning caption under the enlarged card (role chip + "why it fits"). */
+.cardpreview__info {
+  max-width: 240px;
+  background: rgba(20, 22, 26, 0.94);
+  color: #eef1f4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.cardpreview--multi .cardpreview__info {
+  max-width: 382px;
+}
+.cardpreview__role {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #cbd2da;
+  margin-bottom: 4px;
+}
+.cardpreview__caption {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 /* --- Rendered analysis (markdown) ---------------------------------------- */

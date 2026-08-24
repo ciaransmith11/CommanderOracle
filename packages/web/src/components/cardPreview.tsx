@@ -44,13 +44,35 @@ export function placePreview(cx: number, cy: number, faceCount: number): { x: nu
   return { x, y };
 }
 
-export function CardPreview({ urls, x, y }: { urls: string[]; x: number; y: number }) {
+export function CardPreview({
+  urls,
+  x,
+  y,
+  role,
+  caption,
+}: {
+  urls: string[];
+  x: number;
+  y: number;
+  /** Optional functional-role label, shown as a chip above the reasoning. */
+  role?: string;
+  /** Optional "why it's in the deck" reasoning, shown under the enlarged card. */
+  caption?: string;
+}) {
   if (urls.length === 0) return null;
   return (
     <div className={`cardpreview${urls.length > 1 ? ' cardpreview--multi' : ''}`} style={{ left: x, top: y }}>
-      {urls.map((u, i) => (
-        <img key={i} src={u} alt="" />
-      ))}
+      <div className="cardpreview__imgs">
+        {urls.map((u, i) => (
+          <img key={i} src={u} alt="" />
+        ))}
+      </div>
+      {(role || caption) && (
+        <div className="cardpreview__info">
+          {role && <span className="cardpreview__role">{role}</span>}
+          {caption && <p className="cardpreview__caption">{caption}</p>}
+        </div>
+      )}
     </div>
   );
 }

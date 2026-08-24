@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Card, CategorizedCard } from '@commander-oracle/shared';
 import { accentForColors } from './deck.js';
+import { CardPreview, faceUrls, placePreview } from '../components/cardPreview.js';
 
 export function CardTile({
   card,
@@ -23,14 +24,20 @@ export function CardTile({
   // back to the illustration crop only if the full image is missing.
   const img = card.imageUrl ?? card.artCrop ?? null;
   const [loaded, setLoaded] = useState(false);
+  // Hover-to-enlarge: reuse the shared viewport-clamped preview, and surface the
+  // per-card reasoning (from Recommend `note`, or the deck classifier `hoverNote`).
+  const urls = faceUrls(card);
+  const reason = note ?? hoverNote;
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   return (
-    <div className="tile" title={hoverNote}>
+    <div className="tile">
       <a
         className={`tile__card${loaded ? ' is-loaded' : ''}`}
         href={card.scryfallUri ?? '#'}
         target="_blank"
         rel="noreferrer"
-        title={card.name}
+        onMouseMove={(e) => urls.length > 0 && setPos(placePreview(e.clientX, e.clientY, urls.length))}
+        onMouseLeave={() => setPos(null)}
       >
         {img ? (
           <img
@@ -69,6 +76,7 @@ export function CardTile({
           {action.label}
         </button>
       )}
+      {pos && <CardPreview urls={urls} x={pos.x} y={pos.y} role={role} caption={reason} />}
     </div>
   );
 }
