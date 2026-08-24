@@ -41,7 +41,7 @@ export function Dashboard() {
   );
 }
 
-type Swap = { cut: string; add: Card; reason: string };
+type Swap = { cut: string; add: Card; reason: string; role: import('@commander-oracle/shared').DeckRole };
 
 function SuggestionsPanel() {
   const { commander, cards, replaceCard } = useDeck();
@@ -84,6 +84,7 @@ function SuggestionsPanel() {
               add={s.add}
               cut={s.cut}
               reason={s.reason}
+              role={s.role}
               onApply={() => {
                 replaceCard(s.cut, s.add);
                 drop(i);

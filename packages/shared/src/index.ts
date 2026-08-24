@@ -69,12 +69,32 @@ export type Section =
   | 'Lands'
   | 'Other';
 
+/**
+ * The functional deck-building roles (the template), distinct from card TYPE.
+ * A card's role is model judgment (a Sol Ring is Ramp; a Wrath is Mass Disruption).
+ */
+export const DECK_ROLES = [
+  'Lands',
+  'Ramp',
+  'Card Advantage',
+  'Targeted Disruption',
+  'Mass Disruption',
+  'Plan',
+] as const;
+export type DeckRole = (typeof DECK_ROLES)[number];
+
 /** A card paired with how many copies the decklist contains. */
 export interface CategorizedCard {
   qty: number;
   card: Card;
   /** The set code the user typed for this line (if any) — shown in the echo and given to the model. */
   requestedSet?: string;
+  /** Functional role (model-assigned); the grid groups by this. Primary role. */
+  role?: DeckRole;
+  /** Secondary roles a multi-role card also fills. */
+  roles?: DeckRole[];
+  /** One-line "why this card" note (model-assigned). */
+  note?: string;
 }
 
 export interface DeckSection {

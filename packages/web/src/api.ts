@@ -1,4 +1,4 @@
-import type { Card, CategorizedDeck } from '@commander-oracle/shared';
+import type { Card, CategorizedDeck, DeckRole } from '@commander-oracle/shared';
 import type { DeckBalanceResult } from '@commander-oracle/core';
 
 /** Client for the Commander Oracle backend. The frontend only ever talks here. */
@@ -70,7 +70,7 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deck }),
-    }).then(json<{ suggestions: { cut: string; add: Card; reason: string }[] }>),
+    }).then(json<{ suggestions: { cut: string; add: Card; reason: string; role: DeckRole }[] }>),
 
   /** Land-aware reconciliation of a proposed build decklist to exactly 100. */
   reconcileBuild: (text: string, colorIdentity: string[]) =>

@@ -6,7 +6,8 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
 import { balanceResolvedDeck, categorise, parseDecklist } from '@commander-oracle/core';
-import type { Card, CategorizedDeck } from '@commander-oracle/shared';
+import type { Card, CategorizedDeck, DeckRole } from '@commander-oracle/shared';
+import { DECK_ROLES } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
 import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries, resolveSet, searchSets } from './scryfall.js';
@@ -321,6 +322,13 @@ app.post('/api/suggest', async (c) => {
   const ci = deck.commander[0]?.colorIdentity ?? [];
   const withinCI = (colors: string[]) => colors.every((col) => ci.includes(col));
 
+  // Coerce the model's role to a valid canonical role; lands are unambiguous.
+  const asRole = (add: Card, raw?: string): DeckRole => {
+    if (/\bLand\b/.test(add.typeLine)) return 'Lands';
+    const match = DECK_ROLES.find((r) => r.toLowerCase() === (raw ?? '').toLowerCase().trim());
+    return match ?? 'Plan';
+  };
+
   const suggestions = [];
   const usedAdds = new Set<string>();
   for (const s of raw) {
@@ -332,7 +340,7 @@ app.post('/api/suggest', async (c) => {
     if (ci.length && !withinCI(add.colorIdentity)) continue; // off colour identity
     if (!cuttable.has(s.cut.toLowerCase())) continue; // cut must be a non-commander deck card
     usedAdds.add(addKey);
-    suggestions.push({ cut: s.cut, add, reason: s.reason });
+    suggestions.push({ cut: s.cut, add, reason: s.reason, role: asRole(add, s.role) });
   }
 
   return c.json({ suggestions });

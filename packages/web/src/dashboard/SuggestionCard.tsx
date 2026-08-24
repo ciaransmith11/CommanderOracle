@@ -1,4 +1,4 @@
-import type { Card } from '@commander-oracle/shared';
+import type { Card, DeckRole } from '@commander-oracle/shared';
 
 /**
  * A recommendation rendered as an actionable card — stronger treatment (accent
@@ -9,12 +9,14 @@ export function SuggestionCard({
   add,
   cut,
   reason,
+  role,
   onApply,
   onDismiss,
 }: {
   add: Card;
   cut: string;
   reason: string;
+  role?: DeckRole;
   onApply: () => void;
   onDismiss: () => void;
 }) {
@@ -27,6 +29,7 @@ export function SuggestionCard({
       <div className="sugg__body">
         <div className="sugg__swap">
           <span className="sugg__add">{add.name}</span>
+          {role && <span className="sugg__role">{role}</span>}
           <span className="sugg__for">
             in for <span className="sugg__cut">{cut}</span>
           </span>

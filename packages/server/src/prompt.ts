@@ -191,10 +191,11 @@ You are given the deck (already parsed and categorised). Propose 3–5 high-impa
 For each swap:
 - "cut": the EXACT name of a card currently in the deck to remove — pick weak, off-strategy, redundant, or low-impact cards. NEVER cut the commander, a core engine piece, or a key win condition.
 - "add": the EXACT name of a real Magic card that improves the deck. It MUST be within the commander's colour identity and Commander-legal, and MUST NOT already be in the deck.
+- "role": the add's PRIMARY functional role, one of exactly: "Lands", "Ramp", "Card Advantage", "Targeted Disruption", "Mass Disruption", "Plan".
 - "reason": ONE concise line (max ~120 chars) on why the add beats the cut here.
 
 Only suggest real cards you are confident exist with those exact names. Return ONLY a JSON object, no prose:
-{"suggestions":[{"cut":"Exact Card Name","add":"Exact Card Name","reason":"..."}]}`;
+{"suggestions":[{"cut":"Exact Card Name","add":"Exact Card Name","role":"Ramp","reason":"..."}]}`;
 
 export function suggestSystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: SWAP_SUGGESTER, cache_control: { type: 'ephemeral' } }];

@@ -132,6 +132,7 @@ export interface RawSwap {
   cut: string;
   add: string;
   reason: string;
+  role?: string;
 }
 
 /** Ask the model for structured swap suggestions over a verified deck. */
