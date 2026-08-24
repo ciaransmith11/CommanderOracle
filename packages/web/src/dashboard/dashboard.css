@@ -473,31 +473,74 @@
 
 /* Card tile */
 .tile {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
-.tile__accent {
-  height: 4px;
-}
-.tile__art {
+/* The full card face (Scryfall image_uris.normal), portrait 5:7. */
+.tile__card {
   position: relative;
-  aspect-ratio: 626 / 457; /* Scryfall art_crop ratio */
+  display: block;
+  aspect-ratio: 488 / 680; /* Scryfall "normal" full-card ratio */
+  border-radius: 4.75% / 3.5%; /* matches the card's own corner radius */
+  overflow: hidden;
   background: var(--surface-2);
 }
-.tile__art img {
+/* Skeleton shimmer shown until the card image loads. */
+.tile__card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--surface) 50%, var(--surface-2) 70%);
+  background-size: 200% 100%;
+  animation: tile-shimmer 1.2s ease-in-out infinite;
+}
+.tile__card.is-loaded::before {
+  display: none;
+}
+@keyframes tile-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.tile__card img {
+  position: relative;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.tile__card.is-loaded img {
+  opacity: 1;
 }
 .tile__art-fallback {
+  position: relative;
   padding: 10px;
   font-size: 12px;
   color: var(--ink-mute);
+}
+.tile__role {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  max-width: calc(100% - 12px);
+  background: rgba(0, 0, 0, 0.74);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border-left: 3px solid transparent; /* colour-identity accent */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tile__qty {
   position: absolute;
@@ -524,35 +567,12 @@
   line-height: 1;
   opacity: 0;
   transition: opacity 0.12s;
+  cursor: pointer;
 }
 .tile:hover .tile__remove {
   opacity: 1;
 }
-.tile__meta {
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.tile__name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink);
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.tile__name:hover {
-  color: var(--accent);
-}
-.tile__type {
-  font-size: 11px;
-  color: var(--ink-mute);
-}
 .tile__action {
-  margin: 0 10px 10px;
   border: none;
   border-radius: 7px;
   background: var(--accent);
@@ -560,6 +580,7 @@
   font-weight: 600;
   font-size: 12px;
   padding: 7px;
+  cursor: pointer;
 }
 
 @media (max-width: 760px) {
@@ -943,7 +964,6 @@
   font-size: 11px;
   line-height: 1.4;
   color: var(--ink-mid);
-  margin-top: 4px;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;

@@ -1,33 +1,13 @@
+import { useState } from 'react';
 import type { Card, CategorizedCard } from '@commander-oracle/shared';
-
-/** Colour-accent bar keyed to a card's colour identity (gold if multi, grey if colourless). */
-function accentBar(colorIdentity: string[]): string {
-  const COLOR: Record<string, string> = {
-    W: '#e9dba6',
-    U: '#2f6fb0',
-    B: '#4a4550',
-    R: '#b0432f',
-    G: '#3f8a58',
-  };
-  if (colorIdentity.length === 0) return '#b9c0c7';
-  if (colorIdentity.length === 1) return COLOR[colorIdentity[0]!] ?? '#b9c0c7';
-  const stops = colorIdentity.map((c) => COLOR[c] ?? '#b9c0c7');
-  return `linear-gradient(90deg, ${stops.join(', ')})`;
-}
-
-/** The short type — "Legendary Creature — Goblin" → "Creature". */
-function shortType(typeLine: string): string {
-  const face = typeLine.split('//')[0]!;
-  const main = face.split('—')[0]!.trim();
-  const words = main.split(/\s+/).filter((w) => !['Legendary', 'Basic', 'Snow', 'Tribal', 'World'].includes(w));
-  return words[words.length - 1] ?? main;
-}
+import { accentForColors } from './deck.js';
 
 export function CardTile({
   card,
   qty,
   note,
   hoverNote,
+  role,
   onRemove,
   action,
 }: {
@@ -35,33 +15,55 @@ export function CardTile({
   qty?: number;
   note?: string;
   hoverNote?: string;
+  role?: string;
   onRemove?: () => void;
   action?: { label: string; onClick: () => void };
 }) {
-  const art = card.artCrop ?? card.imageUrl ?? null;
+  // Prefer the full card face (image_uris.normal, DFC-aware on the server); fall
+  // back to the illustration crop only if the full image is missing.
+  const img = card.imageUrl ?? card.artCrop ?? null;
+  const [loaded, setLoaded] = useState(false);
   return (
     <div className="tile" title={hoverNote}>
-      <div className="tile__accent" style={{ background: accentBar(card.colorIdentity) }} />
-      <div className="tile__art">
-        {art ? (
-          <img src={art} alt="" loading="lazy" />
+      <a
+        className={`tile__card${loaded ? ' is-loaded' : ''}`}
+        href={card.scryfallUri ?? '#'}
+        target="_blank"
+        rel="noreferrer"
+        title={card.name}
+      >
+        {img ? (
+          <img
+            src={img}
+            alt={card.name}
+            loading="lazy"
+            onLoad={() => setLoaded(true)}
+            onError={() => setLoaded(true)}
+          />
         ) : (
           <div className="tile__art-fallback">{card.name}</div>
         )}
+        {role && (
+          <span className="tile__role" style={{ borderColor: accentForColors(card.colorIdentity) }}>
+            {role}
+          </span>
+        )}
         {qty && qty > 1 && <span className="tile__qty">{qty}×</span>}
         {onRemove && (
-          <button className="tile__remove" onClick={onRemove} aria-label={`Remove ${card.name}`} type="button">
+          <button
+            className="tile__remove"
+            onClick={(e) => {
+              e.preventDefault();
+              onRemove();
+            }}
+            aria-label={`Remove ${card.name}`}
+            type="button"
+          >
             ×
           </button>
         )}
-      </div>
-      <div className="tile__meta">
-        <a className="tile__name" href={card.scryfallUri ?? '#'} target="_blank" rel="noreferrer" title={card.name}>
-          {card.name}
-        </a>
-        <span className="tile__type">{shortType(card.typeLine)}</span>
-        {note && <span className="tile__note">{note}</span>}
-      </div>
+      </a>
+      {note && <span className="tile__note">{note}</span>}
       {action && (
         <button className="tile__action" onClick={action.onClick} type="button">
           {action.label}
@@ -147,6 +149,7 @@ export function DeckGrid({
                   key={item.card.name}
                   card={item.card}
                   qty={item.qty}
+                  role={byRole ? s : undefined}
                   hoverNote={item.note}
                   onRemove={onRemove ? () => onRemove(item.card.name) : undefined}
                 />
