@@ -218,6 +218,25 @@ export function suggestSystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: SWAP_SUGGESTER, cache_control: { type: 'ephemeral' } }];
 }
 
+const DECK_CLASSIFIER = `You assign every card in a Commander deck to its PRIMARY functional role and note its job in the deck.
+
+Choose exactly ONE primary role per card, from:
+- "Lands" — any card whose type line includes Land.
+- "Ramp" — mana acceleration (rocks, dorks, rituals, land ramp).
+- "Card Advantage" — draw, card selection, tutors, recursion engines.
+- "Targeted Disruption" — spot removal, counters, single-target interaction.
+- "Mass Disruption" — board wipes and mass/symmetric effects.
+- "Plan" — the deck's payoffs, synergy pieces, threats, and win conditions (everything that executes the gameplan).
+
+Judge by function, not card type: a mana dork is Ramp (not Plan), a removal creature is Targeted Disruption, a Wrath is Mass Disruption. For each card also give "note": ONE short line (max ~90 chars) on its job in THIS deck.
+
+Return ONLY a JSON object mapping each card's EXACT name to {role, note}:
+{"cards":{"Exact Card Name":{"role":"Ramp","note":"..."}}}`;
+
+export function classifySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
+  return [{ type: 'text', text: DECK_CLASSIFIER, cache_control: { type: 'ephemeral' } }];
+}
+
 export function recommendSystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: RECOMMENDER, cache_control: { type: 'ephemeral' } }];
 }

@@ -11,7 +11,7 @@ import { DECK_ROLES } from '@commander-oracle/shared';
 import { ENV, hasApiKey } from './env.js';
 import type { ModelEvent } from './anthropic.js';
 import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries, resolveSet, searchSets } from './scryfall.js';
-import { analyseDeck, buildChat, chatDeck, proposeStrategies, suggestSwaps } from './analyse.js';
+import { analyseDeck, buildChat, chatDeck, classifyDeck, proposeStrategies, suggestSwaps } from './analyse.js';
 import { rulesChat } from './rules.js';
 import {
   annotateReasons,
@@ -357,6 +357,33 @@ app.post('/api/suggest', async (c) => {
   }
 
   return c.json({ suggestions });
+});
+
+/**
+ * Classify a deck's cards into functional roles (+ a one-line note each) so the
+ * dashboard grid can group by ROLE instead of card type. Coerces to the canonical
+ * roles and guarantees every card gets one (lands are auto; unknowns → Plan).
+ */
+app.post('/api/deck/roles', async (c) => {
+  if (!hasApiKey()) return c.json({ error: 'ANTHROPIC_API_KEY not set' }, 503);
+  const body = await c.req.json<{ deck?: CategorizedDeck }>();
+  if (!body.deck) return c.json({ error: 'missing deck' }, 400);
+  const deck = body.deck;
+
+  const raw = await classifyDeck(deck);
+  const cards = deck.sections.flatMap((s) => s.cards.map((cc) => cc.card));
+  const roles: Record<string, { role: DeckRole; note?: string }> = {};
+
+  for (const card of cards) {
+    const key = card.name.toLowerCase();
+    const v = raw[key];
+    let role: DeckRole;
+    if (/\bLand\b/.test(card.typeLine)) role = 'Lands';
+    else role = DECK_ROLES.find((r) => r.toLowerCase() === (v?.role ?? '').toLowerCase()) ?? 'Plan';
+    roles[key] = { role, note: v?.note };
+  }
+
+  return c.json({ roles });
 });
 
 // --- Sessions (sidebar persistence) ---------------------------------------

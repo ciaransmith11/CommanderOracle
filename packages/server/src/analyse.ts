@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { Card, CategorizedDeck } from '@commander-oracle/shared';
 import { SLOT_BASELINES, DESIGN_PHILOSOPHY, parseDecklist } from '@commander-oracle/core';
 import { callModelJSON, streamModel, streamModelWithTools, type ModelEvent } from './anthropic.js';
-import { strategySystemBlocks, suggestSystemBlocks, systemBlocks } from './prompt.js';
+import { classifySystemBlocks, strategySystemBlocks, suggestSystemBlocks, systemBlocks } from './prompt.js';
 import { CHAT_TOOLS, makeToolRunner, type SetConstraint } from './chat-tools.js';
 import { resolveEntries } from './scryfall.js';
 
@@ -153,6 +153,40 @@ export async function suggestSwaps(deck: CategorizedDeck): Promise<RawSwap[]> {
         typeof (x as RawSwap).reason === 'string',
     )
     .slice(0, 6);
+}
+
+/** Classify every non-commander card into a primary role + a one-line note. Keyed lowercase. */
+export async function classifyDeck(deck: CategorizedDeck): Promise<Record<string, { role: string; note?: string }>> {
+  const cards = deck.sections.flatMap((s) => s.cards.map((cc) => cc.card));
+  if (cards.length === 0) return {};
+  const list = cards
+    .map((c, i) => `${i + 1}. ${c.name} — ${c.typeLine} — ${c.oracleText.replace(/\s*\n+\s*/g, ' ').slice(0, 140)}`)
+    .join('\n');
+  const cmdr = deck.commander[0];
+  const data = await callModelJSON({
+    systemBlocks: classifySystemBlocks(),
+    userContent: [
+      cmdr ? `Commander: ${cmdr.name} — ${cmdr.oracleText.replace(/\s*\n+\s*/g, ' ').slice(0, 220)}` : '',
+      '',
+      'Deck cards:',
+      list,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    maxTokens: 6144,
+  });
+  const map = (data as { cards?: Record<string, unknown> })?.cards;
+  const out: Record<string, { role: string; note?: string }> = {};
+  if (map && typeof map === 'object') {
+    for (const [name, v] of Object.entries(map)) {
+      if (v && typeof v === 'object') {
+        const role = (v as { role?: unknown }).role;
+        const note = (v as { note?: unknown }).note;
+        if (typeof role === 'string') out[name.toLowerCase()] = { role, note: typeof note === 'string' ? note : undefined };
+      }
+    }
+  }
+  return out;
 }
 
 /** Stream a full deck analysis. */

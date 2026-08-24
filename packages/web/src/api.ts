@@ -66,6 +66,14 @@ export const api = {
       json<{ commander: Card | null; groups: { role: string; cards: { card: Card; reason?: string }[] }[] }>,
     ),
 
+  /** Classify a deck's cards into functional roles (+ notes) for role-grouped display. */
+  classifyDeck: (deck: CategorizedDeck) =>
+    fetch('/api/deck/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deck }),
+    }).then(json<{ roles: Record<string, { role: DeckRole; note?: string }> }>),
+
   /** Structured swap suggestions for a deck (add resolved to a full Card, validated). */
   suggest: (deck: CategorizedDeck) =>
     fetch('/api/suggest', {

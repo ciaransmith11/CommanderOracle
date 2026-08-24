@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import type { Card, CategorizedCard } from '@commander-oracle/shared';
+import type { Card, CategorizedCard, DeckRole } from '@commander-oracle/shared';
 
 /**
  * Deck state — the single source of truth for the dashboard. The stats row and
@@ -26,6 +26,8 @@ interface DeckContextValue {
   removeCard: (name: string) => void;
   /** Swap: remove `cutName`, add `add` — the core "Apply suggestion" mutation. */
   replaceCard: (cutName: string, add: Card) => void;
+  /** Attach model-assigned roles/notes to matching cards (from /api/deck/roles). */
+  applyClassification: (map: Record<string, { role: DeckRole; note?: string }>) => void;
   reset: () => void;
 }
 
@@ -72,6 +74,13 @@ export function DeckProvider({ children }: { children: ReactNode }) {
           if (without.some((e) => norm(e.card.name) === norm(add.name))) return without;
           return [...without, { qty: 1, card: add }];
         }),
+      applyClassification: (map) =>
+        setCards((prev) =>
+          prev.map((e) => {
+            const r = map[e.card.name.toLowerCase()];
+            return r ? { ...e, role: r.role, note: r.note } : e;
+          }),
+        ),
       reset: () => {
         setCommander(null);
         setCards([]);

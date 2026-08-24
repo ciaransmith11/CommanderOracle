@@ -27,18 +27,20 @@ export function CardTile({
   card,
   qty,
   note,
+  hoverNote,
   onRemove,
   action,
 }: {
   card: Card;
   qty?: number;
   note?: string;
+  hoverNote?: string;
   onRemove?: () => void;
   action?: { label: string; onClick: () => void };
 }) {
   const art = card.artCrop ?? card.imageUrl ?? null;
   return (
-    <div className="tile">
+    <div className="tile" title={hoverNote}>
       <div className="tile__accent" style={{ background: accentBar(card.colorIdentity) }} />
       <div className="tile__art">
         {art ? (
@@ -69,7 +71,36 @@ export function CardTile({
   );
 }
 
-/** The deck's card grid, grouped by section in a stable, readable order. */
+const TYPE_ORDER = [
+  'Creatures',
+  'Planeswalkers',
+  'Sorceries',
+  'Instants',
+  'Artifacts',
+  'Enchantments',
+  'Battles',
+  'Lands',
+  'Other',
+];
+const ROLE_ORDER = ['Ramp', 'Card Advantage', 'Targeted Disruption', 'Mass Disruption', 'Plan', 'Lands'];
+
+function typeSection(c: Card): string {
+  const t = c.typeLine;
+  if (t.includes('Creature')) return 'Creatures';
+  if (t.includes('Land')) return 'Lands';
+  if (t.includes('Planeswalker')) return 'Planeswalkers';
+  if (t.includes('Battle')) return 'Battles';
+  if (t.includes('Instant')) return 'Instants';
+  if (t.includes('Sorcery')) return 'Sorceries';
+  if (t.includes('Artifact')) return 'Artifacts';
+  if (t.includes('Enchantment')) return 'Enchantments';
+  return 'Other';
+}
+
+/**
+ * The deck's card grid. Groups by FUNCTIONAL ROLE once the deck is classified;
+ * falls back to card type while classification is pending or unavailable.
+ */
 export function DeckGrid({
   cards,
   commander,
@@ -79,33 +110,16 @@ export function DeckGrid({
   commander: Card | null;
   onRemove?: (name: string) => void;
 }) {
-  const SECTION_ORDER = [
-    'Creatures',
-    'Planeswalkers',
-    'Sorceries',
-    'Instants',
-    'Artifacts',
-    'Enchantments',
-    'Battles',
-    'Lands',
-    'Other',
-  ];
-  const sectionOf = (c: Card): string => {
-    const t = c.typeLine;
-    if (t.includes('Creature')) return 'Creatures';
-    if (t.includes('Land')) return 'Lands';
-    if (t.includes('Planeswalker')) return 'Planeswalkers';
-    if (t.includes('Battle')) return 'Battles';
-    if (t.includes('Instant')) return 'Instants';
-    if (t.includes('Sorcery')) return 'Sorceries';
-    if (t.includes('Artifact')) return 'Artifacts';
-    if (t.includes('Enchantment')) return 'Enchantments';
-    return 'Other';
-  };
+  const byRole = cards.some((c) => c.role);
+  const order = byRole ? ROLE_ORDER : TYPE_ORDER;
+  const sectionOf = (item: CategorizedCard): string =>
+    byRole
+      ? item.role ?? (/\bLand\b/.test(item.card.typeLine) ? 'Lands' : 'Plan')
+      : typeSection(item.card);
 
   const groups = new Map<string, CategorizedCard[]>();
   for (const item of cards) {
-    const s = sectionOf(item.card);
+    const s = sectionOf(item);
     (groups.get(s) ?? groups.set(s, []).get(s)!).push(item);
   }
 
@@ -119,7 +133,7 @@ export function DeckGrid({
           </div>
         </section>
       )}
-      {SECTION_ORDER.filter((s) => groups.has(s)).map((s) => {
+      {order.filter((s) => groups.has(s)).map((s) => {
         const items = groups.get(s)!.slice().sort((a, b) => a.card.name.localeCompare(b.card.name));
         const count = items.reduce((n, e) => n + e.qty, 0);
         return (
@@ -133,6 +147,7 @@ export function DeckGrid({
                   key={item.card.name}
                   card={item.card}
                   qty={item.qty}
+                  hoverNote={item.note}
                   onRemove={onRemove ? () => onRemove(item.card.name) : undefined}
                 />
               ))}

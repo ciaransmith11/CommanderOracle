@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Card } from '@commander-oracle/shared';
 import { categorise } from '@commander-oracle/core';
 import { api } from '../api.js';
@@ -12,8 +12,27 @@ import { SuggestionCard } from './SuggestionCard.js';
  * reading from deck state. Shared by Analyze and (once a build finishes) Build.
  */
 export function Dashboard() {
-  const { name, commander, cards, removeCard } = useDeck();
+  const { name, commander, cards, removeCard, applyClassification } = useDeck();
+  const [classifying, setClassifying] = useState(false);
   const stats = deckStats(cards, commander);
+
+  // On a freshly loaded deck (no roles yet), classify every card into a functional
+  // role so the grid can group by role. Runs once per load; falls back silently.
+  const fresh = cards.length > 0 && cards.every((c) => !c.role);
+  useEffect(() => {
+    if (!fresh) return;
+    let cancelled = false;
+    setClassifying(true);
+    api
+      .classifyDeck(categorise(cards, commander ? [commander] : []))
+      .then((r) => !cancelled && applyClassification(r.roles))
+      .catch(() => {})
+      .finally(() => !cancelled && setClassifying(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fresh]);
   const title = commander?.name ?? name;
   const colorLabel =
     stats.colors.length === 0 ? 'Colourless' : stats.colors.length === 1 ? 'Mono' : `${stats.colors.length}-colour`;
@@ -36,6 +55,7 @@ export function Dashboard() {
 
       <StatsRow cards={cards} commander={commander} />
       <SuggestionsPanel />
+      {classifying && <div className="suggpanel__empty">Classifying cards by role…</div>}
       <DeckGrid cards={cards} commander={commander} onRemove={removeCard} />
     </div>
   );
