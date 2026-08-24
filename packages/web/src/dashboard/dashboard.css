@@ -937,3 +937,15 @@
   border-radius: 999px;
   padding: 1px 8px;
 }
+
+/* Per-card "why it fits" note on a recommend tile */
+.tile__note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-mid);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

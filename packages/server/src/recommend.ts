@@ -1,7 +1,7 @@
 import type { Card } from '@commander-oracle/shared';
 import { searchCards } from './scryfall.js';
 import { callModelJSON, streamModel } from './anthropic.js';
-import { querySystemBlocks, recommendSystemBlocks, roleQuerySystemBlocks } from './prompt.js';
+import { querySystemBlocks, reasonSystemBlocks, recommendSystemBlocks, roleQuerySystemBlocks } from './prompt.js';
 
 /**
  * Card recommendations for a strategy/keyword. The model never sources cards
@@ -132,6 +132,36 @@ export async function gatherRoleGroups(
     if (fresh.length) groups.push({ role, cards: fresh });
   }
   return groups;
+}
+
+/**
+ * One-line "why it fits" per candidate, in a single model pass over the pool.
+ * Returns a name→reason map (keyed lowercase); cards without a reason are omitted.
+ */
+export async function annotateReasons(
+  strategy: string,
+  commanderName: string | undefined,
+  cards: Card[],
+): Promise<Record<string, string>> {
+  if (cards.length === 0) return {};
+  const list = cards
+    .map((c, i) => `${i + 1}. ${c.name} — ${c.typeLine} — ${c.oracleText.replace(/\s*\n+\s*/g, ' ').slice(0, 160)}`)
+    .join('\n');
+  const data = await callModelJSON({
+    systemBlocks: reasonSystemBlocks(),
+    userContent: [`Strategy: ${strategy}`, commanderName ? `Commander: ${commanderName}` : '', '', 'Cards:', list]
+      .filter(Boolean)
+      .join('\n'),
+    maxTokens: 4096,
+  });
+  const reasons = (data as { reasons?: Record<string, unknown> })?.reasons;
+  const out: Record<string, string> = {};
+  if (reasons && typeof reasons === 'object') {
+    for (const [name, reason] of Object.entries(reasons)) {
+      if (typeof reason === 'string') out[name.toLowerCase()] = reason;
+    }
+  }
+  return out;
 }
 
 function candidateLine(card: Card): string {

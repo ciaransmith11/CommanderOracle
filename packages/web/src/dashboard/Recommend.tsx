@@ -13,7 +13,7 @@ export function RecommendPane() {
   const { addCard, cards } = useDeck();
   const [strategy, setStrategy] = useState('');
   const [commander, setCommander] = useState('');
-  const [groups, setGroups] = useState<{ role: string; cards: Card[] }[] | null>(null);
+  const [groups, setGroups] = useState<{ role: string; cards: { card: Card; reason?: string }[] }[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,12 +82,13 @@ export function RecommendPane() {
             {g.role} <span className="deckgrid__count">{g.cards.length}</span>
           </h3>
           <div className="deckgrid__cards">
-            {g.cards.map((card) => {
+            {g.cards.map(({ card, reason }) => {
               const added = inDeck.has(card.name.toLowerCase());
               return (
                 <CardTile
                   key={card.name}
                   card={card}
+                  note={reason}
                   action={{ label: added ? 'Added ✓' : 'Add', onClick: () => addCard(card) }}
                 />
               );

@@ -62,7 +62,9 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ strategy, commander }),
-    }).then(json<{ commander: Card | null; groups: { role: string; cards: Card[] }[] }>),
+    }).then(
+      json<{ commander: Card | null; groups: { role: string; cards: { card: Card; reason?: string }[] }[] }>,
+    ),
 
   /** Structured swap suggestions for a deck (add resolved to a full Card, validated). */
   suggest: (deck: CategorizedDeck) =>

@@ -171,14 +171,31 @@ export function querySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: QUERY_WRITER, cache_control: { type: 'ephemeral' } }];
 }
 
-const ROLE_QUERY_WRITER = `You convert a Magic: The Gathering Commander strategy into Scryfall query fragments GROUPED BY DECK ROLE, so a card finder can show results section by section.
+const ROLE_QUERY_WRITER = `You convert a Magic: The Gathering Commander strategy into Scryfall query fragments GROUPED BY the deck's FUNCTIONAL ROLE (the deck-building template), so a card finder can show results section by section.
 
-Use Scryfall search syntax for CARD MECHANICS only (o:"phrase", t:type, keyword:x, pow>=/mv<=, OR/AND) — the SAME syntax rules as always. Do NOT include colour (id:/c:), legality (legal:), or basic-land filters; those are added for you.
+Use Scryfall search syntax for CARD MECHANICS only (o:"phrase", t:type, keyword:x, pow>=/mv<=, OR/AND). Do NOT include colour (id:/c:), legality (legal:), or basic-land filters; those are added for you.
 
-Pick the 4–6 roles most relevant to THIS strategy from: Ramp, Card Advantage, Removal / Interaction, Board Wipes, Payoffs, Enablers, Synergy Pieces, Protection, Finishers, Lands. For each role give ONE fragment that finds real cards for that role WITHIN the strategy (e.g. for a Treasure deck, Payoffs might be o:"sacrifice" o:"Treasure" o:"draw").
+Choose the 4–6 roles most relevant to THIS strategy from EXACTLY these labels:
+- "Ramp" — mana acceleration (rocks, dorks, ritual/land ramp).
+- "Card Advantage" — draw engines, card selection, tutors.
+- "Targeted Disruption" — spot removal, counters, single-target interaction.
+- "Mass Disruption" — board wipes and mass/symmetric effects.
+- "Plan" — the strategy's PAYOFFS, synergy pieces, and win conditions (the core gameplan).
+- "Lands" — utility / nonbasic lands that serve the strategy (only if relevant).
 
-Return ONLY a JSON object, no prose:
-{"groups":[{"role":"Ramp","query":"..."},{"role":"Payoffs","query":"..."}]}`;
+For each chosen role give ONE fragment that finds real cards for that role WITHIN the strategy (e.g. a Treasure deck's "Plan" might be o:"sacrifice" o:"Treasure" o:"draw").
+
+Return ONLY a JSON object, no prose (use the exact role labels above):
+{"groups":[{"role":"Ramp","query":"..."},{"role":"Plan","query":"..."}]}`;
+
+const REASON_WRITER = `You are Deckromancer. For each candidate card, write ONE concise line (max ~110 characters) on why it is good for the given strategy and commander — the specific problem it solves or synergy it enables. Be concrete and specific to the card; no fluff, no restating the card's name.
+
+You are given the strategy and a numbered list of cards ("name — type — oracle snippet"). Return ONLY a JSON object mapping each card's EXACT name to its reason:
+{"reasons":{"Exact Card Name":"why it fits","Another Card":"..."}}`;
+
+export function reasonSystemBlocks(): Anthropic.Messages.TextBlockParam[] {
+  return [{ type: 'text', text: REASON_WRITER, cache_control: { type: 'ephemeral' } }];
+}
 
 export function roleQuerySystemBlocks(): Anthropic.Messages.TextBlockParam[] {
   return [{ type: 'text', text: ROLE_QUERY_WRITER, cache_control: { type: 'ephemeral' } }];
@@ -189,7 +206,7 @@ const SWAP_SUGGESTER = `You are Deckromancer, improving a verified Commander dec
 You are given the deck (already parsed and categorised). Propose 3–5 high-impact swaps that make it better for ITS strategy and commander.
 
 For each swap:
-- "cut": the EXACT name of a card currently in the deck to remove — pick weak, off-strategy, redundant, or low-impact cards. NEVER cut the commander, a core engine piece, or a key win condition.
+- "cut": the EXACT name of a card currently in the deck to remove — pick weak, off-strategy, redundant, or low-impact cards. NEVER cut the commander, a core engine piece, or a key win condition. Do NOT cut lands (cards with "Land" in the type line) — leave the mana base alone.
 - "add": the EXACT name of a real Magic card that improves the deck. It MUST be within the commander's colour identity and Commander-legal, and MUST NOT already be in the deck.
 - "role": the add's PRIMARY functional role, one of exactly: "Lands", "Ramp", "Card Advantage", "Targeted Disruption", "Mass Disruption", "Plan".
 - "reason": ONE concise line (max ~120 chars) on why the add beats the cut here.

@@ -14,6 +14,7 @@ import { autocompleteCommanders, fetchCollection, namedCard, resolveEntries, res
 import { analyseDeck, buildChat, chatDeck, proposeStrategies, suggestSwaps } from './analyse.js';
 import { rulesChat } from './rules.js';
 import {
+  annotateReasons,
   gatherCandidates,
   gatherRoleGroups,
   generateQueries,
@@ -289,7 +290,13 @@ app.post('/api/recommend/cards', async (c) => {
 
   const roleQueries = await generateRoleQueries(body.strategy, commanderCard?.name);
   const groups = await gatherRoleGroups(roleQueries, commanderCard?.colorIdentity);
-  return c.json({ commander: commanderCard, groups });
+  // One pass to attach a per-card "why it fits" reason across the whole pool.
+  const reasons = await annotateReasons(body.strategy, commanderCard?.name, groups.flatMap((g) => g.cards));
+  const withReasons = groups.map((g) => ({
+    role: g.role,
+    cards: g.cards.map((card) => ({ card, reason: reasons[card.name.toLowerCase()] })),
+  }));
+  return c.json({ commander: commanderCard, groups: withReasons });
 });
 
 /**
@@ -318,7 +325,13 @@ app.post('/api/suggest', async (c) => {
 
   const deckCards = [...deck.commander, ...deck.sections.flatMap((s) => s.cards.map((cc) => cc.card))];
   const inDeck = new Set(deckCards.map((c) => c.name.toLowerCase()));
-  const cuttable = new Set(deck.sections.flatMap((s) => s.cards.map((cc) => cc.card.name.toLowerCase())));
+  // Cuttable = non-commander, NON-LAND deck cards (never suggest cutting the mana base).
+  const cuttable = new Set(
+    deck.sections
+      .flatMap((s) => s.cards.map((cc) => cc.card))
+      .filter((card) => !/\bLand\b/.test(card.typeLine))
+      .map((card) => card.name.toLowerCase()),
+  );
   const ci = deck.commander[0]?.colorIdentity ?? [];
   const withinCI = (colors: string[]) => colors.every((col) => ci.includes(col));
 

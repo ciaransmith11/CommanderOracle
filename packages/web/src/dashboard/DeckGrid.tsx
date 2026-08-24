@@ -26,11 +26,13 @@ function shortType(typeLine: string): string {
 export function CardTile({
   card,
   qty,
+  note,
   onRemove,
   action,
 }: {
   card: Card;
   qty?: number;
+  note?: string;
   onRemove?: () => void;
   action?: { label: string; onClick: () => void };
 }) {
@@ -56,6 +58,7 @@ export function CardTile({
           {card.name}
         </a>
         <span className="tile__type">{shortType(card.typeLine)}</span>
+        {note && <span className="tile__note">{note}</span>}
       </div>
       {action && (
         <button className="tile__action" onClick={action.onClick} type="button">
