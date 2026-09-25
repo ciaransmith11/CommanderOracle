@@ -108,8 +108,8 @@ export function Advisor({
     mode === 'rules'
       ? 'Ask a rules question…'
       : hasDeck
-        ? 'Ask about your deck — cuts, adds, curve…'
-        : 'Ask anything — or load a deck for tailored advice';
+        ? 'Ask about your deck…'
+        : 'Ask anything…';
 
   return (
     <aside className="advisor" aria-label="Advisor">

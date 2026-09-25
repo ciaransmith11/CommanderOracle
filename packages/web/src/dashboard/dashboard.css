@@ -82,7 +82,7 @@
 
 .dash__body {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  grid-template-columns: 1fr 340px;
   min-height: 0;
 }
 .dash__main {
@@ -807,6 +807,23 @@
 .abub__md h3 {
   font-size: 13px;
   margin: 8px 0 4px;
+}
+/* Fallback: the advisor answers in prose, but if the model ever emits a table
+   let it scroll horizontally instead of crushing into one-word-per-line. */
+.abub__md table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+.abub__md th,
+.abub__md td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
 }
 
 /* --- Suggested swaps panel ---------------------------------------------- */

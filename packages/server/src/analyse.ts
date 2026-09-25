@@ -231,6 +231,11 @@ export function chatDeck(
     '2. NEVER suggest adding a card to a category that is already at or above its baseline. Direct additions to the UNDER-filled roles only, and source them via search_cards.\n' +
     '3. NEVER cut a card that is core to the strategy or a key synergy/win-condition piece. Cut over-represented, off-strategy, redundant, or low-impact cards instead — and say which.\n' +
     '4. For each cut and each addition, name the slot count it addresses and the part of the strategy it serves.\n\n' +
+    'OUTPUT FORMAT: You are a conversational sidebar, not a report. Answer in short prose and, at most, ' +
+    'brief bullet lists. NEVER use Markdown tables — they render unreadably in this narrow column. If the ' +
+    'user wants a full set of proposed swaps as actionable cards, tell them to use the "Suggested swaps" ' +
+    'button on the deck dashboard (it renders each swap as a card with Apply/Dismiss); here, discuss a few ' +
+    'specific changes conversationally instead.\n\n' +
     'Stay grounded in real card data; never invent card text.)';
 
   return streamModelWithTools({
